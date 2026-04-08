@@ -1,0 +1,115 @@
+import type { INodeProperties } from 'n8n-workflow';
+
+const show = {
+	operation: ['send'],
+	resource: ['communication'],
+};
+
+export const communicationSendDescription: INodeProperties[] = [
+	{
+		displayName: 'Communication Type',
+		name: 'communicationType',
+		type: 'options',
+		displayOptions: { show },
+		options: [
+			{
+				name: 'Email',
+				value: 'Email',
+			},
+			{
+				name: 'SMS',
+				value: 'SMS',
+			},
+		],
+		default: 'Email',
+		required: true,
+		description: 'Whether to send an email or SMS text message',
+	},
+	{
+		displayName: 'Author User ID',
+		name: 'authorUserId',
+		type: 'number',
+		displayOptions: { show },
+		default: 0,
+		required: true,
+		description: 'The MP User ID of the communication author',
+	},
+	{
+		displayName: 'From Contact ID',
+		name: 'fromContactId',
+		type: 'number',
+		displayOptions: { show },
+		default: 0,
+		required: true,
+		description: 'The Contact ID the message is sent from',
+	},
+	{
+		displayName: 'Reply-To Contact ID',
+		name: 'replyToContactId',
+		type: 'number',
+		displayOptions: { show },
+		default: 0,
+		required: true,
+		description: 'The Contact ID for replies',
+	},
+	{
+		displayName: 'Subject',
+		name: 'subject',
+		type: 'string',
+		displayOptions: { show },
+		default: '',
+		required: true,
+		description: 'The subject line of the communication',
+	},
+	{
+		displayName: 'Body',
+		name: 'body',
+		type: 'string',
+		typeOptions: { rows: 5 },
+		displayOptions: { show },
+		default: '',
+		required: true,
+		description: 'The body content of the communication (HTML supported for email)',
+	},
+	{
+		displayName: 'Recipient Contact IDs',
+		name: 'contacts',
+		type: 'string',
+		displayOptions: { show },
+		default: '',
+		required: true,
+		placeholder: '12345, 67890',
+		description: 'Comma-separated list of Contact IDs to send to',
+	},
+	{
+		displayName: 'Additional Options',
+		name: 'additionalOptions',
+		type: 'collection',
+		displayOptions: { show },
+		placeholder: 'Add Option',
+		default: {},
+		options: [
+			{
+				displayName: 'Is Bulk Email',
+				name: 'isBulkEmail',
+				type: 'boolean',
+				default: false,
+				description: 'Whether this is a bulk email (respects opt-out preferences)',
+			},
+			{
+				displayName: 'Start Date',
+				name: 'startDate',
+				type: 'dateTime',
+				default: '',
+				description: 'Schedule the communication for a future date/time',
+			},
+			{
+				displayName: 'Text Phone Number ID',
+				name: 'textPhoneNumberId',
+				type: 'number',
+				default: 0,
+				description: 'Required for SMS — the Phone Number ID to send from',
+			},
+		],
+	},
+];
