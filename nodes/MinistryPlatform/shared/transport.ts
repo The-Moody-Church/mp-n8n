@@ -44,74 +44,10 @@ function estimateUrlLength(url: string, qs: IDataObject): number {
 }
 
 /**
- * Enhance API error messages with actionable guidance.
- * MP API errors are often cryptic — this maps common HTTP status codes
- * to clear explanations so users don't have to guess.
- */
-function enhanceApiError(error: Error, method: string, endpoint: string): Error {
-	const message = error.message || '';
-	const statusMatch = message.match(/\b(401|403|404|409|413|500|503)\b/);
-
-	if (!statusMatch) return error;
-
-	const status = statusMatch[1];
-	const context = `${method} ${endpoint}`;
-
-	switch (status) {
-		case '401':
-			error.message =
-				`Unauthorized (401) on ${context}. ` +
-				'The API client credentials may be invalid or expired. ' +
-				'Check your Client ID and Client Secret in the credential settings.';
-			break;
-		case '403':
-			error.message =
-				`Forbidden (403) on ${context}. ` +
-				'Your API client does not have permission for this operation. ' +
-				'In Ministry Platform, go to Administration > API Clients and check ' +
-				'that this client has the required page/table permissions. ' +
-				'Tip: create a dedicated n8n API user and grant only the permissions your workflows need.';
-			break;
-		case '404':
-			if (method === 'GET' && endpoint.includes('/tables/')) {
-				error.message =
-					`Not Found (404) on ${context}. ` +
-					'The table name or record ID may be incorrect, or the URL may have exceeded ' +
-					'the ~4096 character IIS limit (try reducing $filter or $select length).';
-			} else {
-				error.message = `Not Found (404) on ${context}. Check that the resource name and ID are correct.`;
-			}
-			break;
-		case '409':
-			error.message =
-				`Conflict (409) on ${context}. ` +
-				'The record may have been modified by another user. ' +
-				'Re-read the record and try your update again.';
-			break;
-		case '413':
-			error.message =
-				`Payload Too Large (413) on ${context}. ` +
-				'The request body exceeds the ~20 MB limit. Try sending fewer records per request.';
-			break;
-		case '500':
-		case '503':
-			error.message =
-				`Server Error (${status}) on ${context}. ` +
-				'The Ministry Platform server encountered an error. ' +
-				'This may be temporary — try again in a few moments. ' +
-				'If it persists, check the MP server logs or contact your MP administrator.';
-			break;
-	}
-
-	return error;
-}
-
-/**
  * Make an authenticated JSON request to the Ministry Platform API.
  * Includes:
- * - URL length pre-check for GET requests
- * - 401 auto-retry with token cache clear
- * - Enhanced error messages for common HTTP status codes
+ * - Automatic POST /tables/{table}/get fallback for long URLs
+ * - 401 auto-retry with fresh token
  */
 export async function mpApiRequest(
 	this: IExecuteFunctions | ILoadOptionsFunctions,
@@ -189,9 +125,7 @@ export async function mpApiRequest(
 	} catch (error) {
 		const errorMessage = (error as Error).message || '';
 
-		// On 401, the token may have been revoked server-side while our cache still has it.
-		// Clear the cache flag so the credential's authenticate() fetches a fresh token,
-		// then retry the request once.
+		// On 401, retry once — preAuthentication will fetch a fresh token
 		if (errorMessage.includes('401') && !retried401.get(cacheKey)) {
 			retried401.set(cacheKey, true);
 			try {
@@ -204,11 +138,11 @@ export async function mpApiRequest(
 				return result;
 			} catch (retryError) {
 				retried401.delete(cacheKey);
-				throw enhanceApiError(retryError as Error, method, endpoint);
+				throw retryError;
 			}
 		}
 
-		throw enhanceApiError(error as Error, method, endpoint);
+		throw error;
 	}
 }
 
@@ -223,22 +157,18 @@ export async function mpApiRequestBinary(
 	const credentials = await this.getCredentials('ministryPlatformApi');
 	const baseUrl = (credentials.baseUrl as string).replace(/\/+$/, '');
 
-	try {
-		const response = await this.helpers.httpRequestWithAuthentication.call(
-			this,
-			'ministryPlatformApi',
-			{
-				method: 'GET',
-				url: `${baseUrl}/ministryplatformapi${endpoint}`,
-				qs,
-				encoding: 'arraybuffer',
-				returnFullResponse: true,
-				json: false,
-			},
-		);
+	const response = await this.helpers.httpRequestWithAuthentication.call(
+		this,
+		'ministryPlatformApi',
+		{
+			method: 'GET',
+			url: `${baseUrl}/ministryplatformapi${endpoint}`,
+			qs,
+			encoding: 'arraybuffer',
+			returnFullResponse: true,
+			json: false,
+		},
+	);
 
-		return response as Buffer;
-	} catch (error) {
-		throw enhanceApiError(error as Error, 'GET', endpoint);
-	}
+	return response as Buffer;
 }
