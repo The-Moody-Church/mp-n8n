@@ -4,6 +4,7 @@ import { tableGetAllDescription } from './getAll';
 import { tableGetDescription } from './get';
 import { tableCreateDescription } from './create';
 import { tableUpdateDescription } from './update';
+import { tableDeleteDescription } from './delete';
 
 const showOnlyForTable = {
 	resource: ['table'],
@@ -20,10 +21,16 @@ export const tableDescription: INodeProperties[] = [
 		},
 		options: [
 			{
-				name: 'Get Many',
-				value: 'getAll',
-				action: 'Get records from a table',
-				description: 'Retrieve multiple records with optional filtering',
+				name: 'Create',
+				value: 'create',
+				action: 'Create records',
+				description: 'Create one or more new records in a table',
+			},
+			{
+				name: 'Delete',
+				value: 'delete',
+				action: 'Delete a record',
+				description: 'Permanently delete a record by its ID',
 			},
 			{
 				name: 'Get',
@@ -32,10 +39,10 @@ export const tableDescription: INodeProperties[] = [
 				description: 'Retrieve a single record by its ID',
 			},
 			{
-				name: 'Create',
-				value: 'create',
-				action: 'Create records',
-				description: 'Create one or more new records in a table',
+				name: 'Get Many',
+				value: 'getAll',
+				action: 'Get records from a table',
+				description: 'Retrieve multiple records with optional filtering',
 			},
 			{
 				name: 'Update',
@@ -56,4 +63,5 @@ export const tableDescription: INodeProperties[] = [
 	...tableGetDescription,
 	...tableCreateDescription,
 	...tableUpdateDescription,
+	...tableDeleteDescription,
 ];

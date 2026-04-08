@@ -290,6 +290,24 @@ export class MinistryPlatform implements INodeType {
 						for (const record of toRecordArray(response)) {
 							returnData.push({ json: record, pairedItem: i });
 						}
+					} else if (operation === 'delete') {
+						const recordId = validatePathSegment(
+							this.getNodeParameter('recordId', i) as string,
+							'Record ID',
+							i,
+							this,
+						);
+
+						await mpApiRequest.call(
+							this,
+							'DELETE',
+							`/tables/${tableName}/${recordId}`,
+						);
+
+						returnData.push({
+							json: { success: true, deleted: recordId, table: tableName },
+							pairedItem: i,
+						});
 					} else if (operation === 'update') {
 						const inputMode = this.getNodeParameter('inputMode', i) as string;
 						const responseSelect = this.getNodeParameter('responseSelect', i, '') as string;
@@ -442,15 +460,27 @@ export class MinistryPlatform implements INodeType {
 						});
 					}
 				} else if (resource === 'procedure') {
-					const procLocator = this.getNodeParameter('procedureName', i) as IDataObject | string;
-					const procName = validatePathSegment(
-						resolveLocator(procLocator),
-						'Stored procedure name',
-						i,
-						this,
-					);
+					if (operation === 'list') {
+						const procSearch = this.getNodeParameter('procSearch', i, '') as string;
+						const qs: IDataObject = {};
 
-					if (operation === 'execute') {
+						if (procSearch) {
+							qs['$search'] = procSearch;
+						}
+
+						const response = await mpApiRequest.call(this, 'GET', '/procs', qs);
+
+						for (const record of toRecordArray(response)) {
+							returnData.push({ json: record, pairedItem: i });
+						}
+					} else if (operation === 'execute') {
+						const procLocator = this.getNodeParameter('procedureName', i) as IDataObject | string;
+						const procName = validatePathSegment(
+							resolveLocator(procLocator),
+							'Stored procedure name',
+							i,
+							this,
+						);
 						const paramsJson = this.getNodeParameter('parameters', i, '{}') as string;
 						const body = safeJsonParse<IDataObject>(paramsJson, 'Parameters (JSON)', i, this);
 
