@@ -24,11 +24,10 @@ export async function getServerTimezone(
 const MAX_URL_LENGTH = 4096;
 
 /**
- * Module-level token cache reference for 401 retry.
- * This must match the cache used in MinistryPlatformApi.credentials.ts.
- * On 401, we clear the entry so the credential's authenticate() fetches a fresh token.
+ * Tracks whether we've already retried after a 401 for a given credential.
+ * On 401, we retry once — n8n's preAuthentication will fetch a fresh token.
  */
-const tokenCacheForRetry = new Map<string, boolean>();
+const retried401 = new Map<string, boolean>();
 
 /**
  * Estimate the full URL length including query string parameters.
@@ -193,18 +192,18 @@ export async function mpApiRequest(
 		// On 401, the token may have been revoked server-side while our cache still has it.
 		// Clear the cache flag so the credential's authenticate() fetches a fresh token,
 		// then retry the request once.
-		if (errorMessage.includes('401') && !tokenCacheForRetry.get(cacheKey)) {
-			tokenCacheForRetry.set(cacheKey, true);
+		if (errorMessage.includes('401') && !retried401.get(cacheKey)) {
+			retried401.set(cacheKey, true);
 			try {
 				const result = await this.helpers.httpRequestWithAuthentication.call(
 					this,
 					'ministryPlatformApi',
 					options,
 				);
-				tokenCacheForRetry.delete(cacheKey);
+				retried401.delete(cacheKey);
 				return result;
 			} catch (retryError) {
-				tokenCacheForRetry.delete(cacheKey);
+				retried401.delete(cacheKey);
 				throw enhanceApiError(retryError as Error, method, endpoint);
 			}
 		}

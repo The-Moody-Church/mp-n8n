@@ -1,32 +1,12 @@
 import type {
+	IAuthenticateGeneric,
 	ICredentialDataDecryptedObject,
 	ICredentialTestRequest,
 	ICredentialType,
 	IHttpRequestHelper,
-	IHttpRequestOptions,
 	INodeProperties,
 	Icon,
 } from 'n8n-workflow';
-
-interface TokenResponse {
-	access_token: string;
-	token_type: string;
-	expires_in: number;
-}
-
-interface CachedToken {
-	accessToken: string;
-	expiresAt: number;
-}
-
-/**
- * Module-level token cache keyed by clientId + baseUrl.
- * Prevents cross-tenant token reuse when multiple credentials exist.
- * Tokens are reused until 60 seconds before expiry.
- */
-const tokenCache = new Map<string, CachedToken>();
-
-const TOKEN_EXPIRY_BUFFER_MS = 60_000;
 
 export class MinistryPlatformApi implements ICredentialType {
 	name = 'ministryPlatformApi';
@@ -73,6 +53,15 @@ export class MinistryPlatformApi implements ICredentialType {
 			description: 'The OAuth2 scope to request',
 		},
 		{
+			displayName: 'Access Token',
+			name: 'accessToken',
+			type: 'hidden',
+			default: '',
+			typeOptions: {
+				expirable: true, password: true,
+			},
+		},
+		{
 			displayName: 'Server Timezone',
 			name: 'serverTimezone',
 			type: 'options',
@@ -95,39 +84,15 @@ export class MinistryPlatformApi implements ICredentialType {
 	];
 
 	/**
-	 * OAuth2 client credentials token exchange with caching.
-	 * Called by n8n before each authenticated request via httpRequestWithAuthentication.
-	 * Tokens are cached per clientId+baseUrl and reused until 60s before expiry.
+	 * Exchange client credentials for an access token before each request.
+	 * n8n calls this before authenticate() and before credential tests.
+	 * The returned accessToken is stored in $credentials.accessToken.
 	 */
-	authenticate = async function (
+	async preAuthentication(
 		this: IHttpRequestHelper,
 		credentials: ICredentialDataDecryptedObject,
-		requestOptions: IHttpRequestOptions,
-	): Promise<IHttpRequestOptions> {
-		const clientId = credentials.clientId as string;
+	) {
 		const baseUrl = (credentials.baseUrl as string).replace(/\/+$/, '');
-
-		// Validate base URL is parseable
-		try {
-			new URL(baseUrl);
-		} catch {
-			throw new Error(
-				'Invalid Platform URL format. Expected: https://churchname.ministryplatform.com',
-			);
-		}
-
-		// Cache key includes both clientId and baseUrl to prevent cross-tenant reuse
-		const cacheKey = `${clientId}:${baseUrl}`;
-		const now = Date.now();
-		const cached = tokenCache.get(cacheKey);
-
-		if (cached && cached.expiresAt > now) {
-			requestOptions.headers = {
-				...requestOptions.headers,
-				Authorization: `Bearer ${cached.accessToken}`,
-			};
-			return requestOptions;
-		}
 
 		const tokenResponse = (await this.helpers.httpRequest({
 			method: 'POST',
@@ -136,36 +101,31 @@ export class MinistryPlatformApi implements ICredentialType {
 			body: new URLSearchParams({
 				grant_type: 'client_credentials',
 				scope: credentials.scope as string,
-				client_id: clientId,
+				client_id: credentials.clientId as string,
 				client_secret: credentials.clientSecret as string,
 			}).toString(),
 			json: true,
-		})) as TokenResponse;
+		})) as { access_token: string };
 
-		if (!tokenResponse.access_token) {
-			throw new Error('OAuth2 token exchange failed: no access_token in response');
-		}
+		return { accessToken: tokenResponse.access_token };
+	}
 
-		tokenCache.set(cacheKey, {
-			accessToken: tokenResponse.access_token,
-			expiresAt: now + tokenResponse.expires_in * 1000 - TOKEN_EXPIRY_BUFFER_MS,
-		});
-
-		requestOptions.headers = {
-			...requestOptions.headers,
-			Authorization: `Bearer ${tokenResponse.access_token}`,
-		};
-
-		return requestOptions;
+	/**
+	 * Add the Bearer token (from preAuthentication) to every request.
+	 */
+	authenticate: IAuthenticateGeneric = {
+		type: 'generic',
+		properties: {
+			headers: {
+				Authorization: '=Bearer {{$credentials.accessToken}}',
+			},
+		},
 	};
 
 	test: ICredentialTestRequest = {
 		request: {
-			method: 'GET',
-			url: '={{$credentials.baseUrl}}/ministryplatformapi/tables',
-			headers: {
-				Accept: 'application/json',
-			},
+			baseURL: '={{$credentials.baseUrl.replace(/\\/+$/, "")}}/ministryplatformapi',
+			url: '/tables',
 		},
 	};
 }
