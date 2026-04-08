@@ -1,5 +1,5 @@
 import type { INodeProperties } from 'n8n-workflow';
-import { recordIdField } from '../../shared/descriptions';
+import { auditUserField } from '../../shared/descriptions';
 
 const show = {
 	operation: ['delete'],
@@ -8,9 +8,17 @@ const show = {
 
 export const tableDeleteDescription: INodeProperties[] = [
 	{
-		...recordIdField,
+		displayName: 'Record ID(s)',
+		name: 'recordId',
+		type: 'string',
 		displayOptions: { show },
+		default: '',
+		required: true,
 		description:
-			'The primary key value of the record to delete. This action is permanent and cannot be undone.',
+			'The primary key value(s) to delete. For a single record, enter the ID. For bulk delete, enter comma-separated IDs (e.g. 123, 456, 789). This action is permanent and cannot be undone.',
+	},
+	{
+		...auditUserField,
+		displayOptions: { show },
 	},
 ];

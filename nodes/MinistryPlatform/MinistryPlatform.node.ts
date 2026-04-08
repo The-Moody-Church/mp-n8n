@@ -252,11 +252,15 @@ export class MinistryPlatform implements INodeType {
 					} else if (operation === 'create') {
 						const inputMode = this.getNodeParameter('inputMode', i) as string;
 						const responseSelect = this.getNodeParameter('responseSelect', i, '') as string;
+						const auditUserId = this.getNodeParameter('auditUserId', i, 0) as number;
 						const qs: IDataObject = {};
 						let body: IDataObject[];
 
 						if (responseSelect) {
 							qs['$select'] = responseSelect;
+						}
+						if (auditUserId > 0) {
+							qs['$User'] = auditUserId;
 						}
 
 						if (inputMode === 'fieldMapping') {
@@ -291,32 +295,87 @@ export class MinistryPlatform implements INodeType {
 							returnData.push({ json: record, pairedItem: i });
 						}
 					} else if (operation === 'delete') {
-						const recordId = validatePathSegment(
-							this.getNodeParameter('recordId', i) as string,
-							'Record ID',
-							i,
-							this,
-						);
+						const recordIdStr = this.getNodeParameter('recordId', i) as string;
+						const auditUserId = this.getNodeParameter('auditUserId', i, 0) as number;
+						const ids = recordIdStr.split(',').map((s) => s.trim()).filter((s) => s);
 
-						await mpApiRequest.call(
-							this,
-							'DELETE',
-							`/tables/${tableName}/${recordId}`,
-						);
+						if (ids.length === 0) {
+							throw new NodeOperationError(
+								this.getNode(),
+								'At least one Record ID is required for delete',
+								{ itemIndex: i },
+							);
+						}
 
-						returnData.push({
-							json: { success: true, deleted: recordId, table: tableName },
-							pairedItem: i,
-						});
+						if (ids.length === 1) {
+							// Single delete: DELETE /tables/{table}/{id}
+							const singleId = validatePathSegment(ids[0], 'Record ID', i, this);
+							const qs: IDataObject = {};
+							if (auditUserId > 0) {
+								qs['$User'] = auditUserId;
+							}
+
+							await mpApiRequest.call(
+								this,
+								'DELETE',
+								`/tables/${tableName}/${singleId}`,
+								qs,
+							);
+
+							returnData.push({
+								json: { success: true, deleted: singleId, table: tableName },
+								pairedItem: i,
+							});
+						} else {
+							// Bulk delete: POST /tables/{table}/delete
+							const numericIds = ids.map((id) => {
+								const parsed = parseInt(id, 10);
+								if (isNaN(parsed) || parsed < 1) {
+									throw new NodeOperationError(
+										this.getNode(),
+										`Invalid ID for bulk delete: "${id}"`,
+										{ itemIndex: i },
+									);
+								}
+								return parsed;
+							});
+
+							const deleteBody: IDataObject = { Ids: numericIds };
+							if (auditUserId > 0) {
+								deleteBody.User = auditUserId;
+							}
+
+							await mpApiRequest.call(
+								this,
+								'POST',
+								`/tables/${tableName}/delete`,
+								{},
+								deleteBody,
+							);
+
+							returnData.push({
+								json: {
+									success: true,
+									deleted: numericIds,
+									count: numericIds.length,
+									table: tableName,
+								},
+								pairedItem: i,
+							});
+						}
 					} else if (operation === 'update') {
 						const inputMode = this.getNodeParameter('inputMode', i) as string;
 						const responseSelect = this.getNodeParameter('responseSelect', i, '') as string;
+						const auditUserId = this.getNodeParameter('auditUserId', i, 0) as number;
 						const allowCreate = this.getNodeParameter('allowCreate', i, false) as boolean;
 						const qs: IDataObject = {};
 						let body: IDataObject[];
 
 						if (responseSelect) {
 							qs['$select'] = responseSelect;
+						}
+						if (auditUserId > 0) {
+							qs['$User'] = auditUserId;
 						}
 						if (allowCreate) {
 							qs['$allowCreate'] = 'true';
