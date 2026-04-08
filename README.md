@@ -32,6 +32,8 @@ This node connects to the Ministry Platform REST API and provides a GUI-driven i
 5. Your platform URL is typically: `https://churchname.ministryplatform.com`
 
 > **Tip: Least-privilege access.** If your workflow only reads from Contacts, only grant Select permission on Contacts. If a workflow writes to Contact_Log, grant Insert on Contact_Log. Don't grant Delete unless a workflow specifically needs it. This way, a 403 error in n8n means "this workflow is trying to do something it shouldn't" rather than silently modifying unexpected data.
+>
+> **How permissions affect the node:** The table dropdown only shows tables your API client can access — this is already permission-scoped by MP. However, all operations (Get, Create, Update, Delete) are always shown regardless of your specific permissions on that table. If your client lacks permission for an operation, you'll get a clear 403 error explaining where to check permissions in MP Admin.
 
 ## Installation
 
