@@ -83,13 +83,22 @@ The URL length limit is the most commonly hit. In mp-charts, queries with ~240 p
 
 **Dates are in the server's local timezone** — MP returns dates as ISO strings without timezone info (e.g. `2026-03-12T00:00:00`). These are in whatever timezone the MP server runs in, which varies by deployment. The credential has a **Server Timezone** field (defaults to `America/Chicago`) that records what timezone the data represents — the node passes dates through as-is, but the setting makes the timezone explicit for workflows that need to know. The `getServerTimezone()` helper in `shared/transport.ts` reads this from credentials.
 
-**Filter escaping** — The `$filter` parameter maps directly to SQL WHERE clauses. Single quotes must be doubled: `Display_Name = 'O''Brien'`. For IN clauses, ensure all IDs are positive integers.
+**Filter syntax is SQL WHERE** — The `$filter` parameter maps directly to SQL WHERE clauses (not OData). Supports `LIKE`, `IN()`, `IS NULL`, `GETDATE()`, boolean logic, and most SQL functions. Single quotes must be doubled: `Display_Name = 'O''Brien'`.
 
-**FK join syntax in $select** — Use `FK_ID_Table.Column` to join related tables:
-- `Member_Status_ID_Table.Member_Status` — join through FK
-- `Participant_Record_Table.Participant_ID` — join through record link
-- `Household_ID_Table_Address_ID_Table.City` — chain multiple joins
-- The casing must match exactly what the API expects.
+**POST-based GET for long queries** — `POST /tables/{table}/get` accepts query parameters in the request body instead of the URL. The transport layer automatically switches to this when a GET URL would exceed ~4096 characters. Parameters map as: `$select` → `Select`, `$filter` → `Filter`, etc.
+
+**$User for audit trail** — On POST, PUT, and DELETE, the `$User` query parameter controls which MP user appears in the audit log. If omitted, the API client's default user is recorded. Exposed as the "Audit User ID" field on create/update/delete operations.
+
+**Bulk delete** — Single delete uses `DELETE /tables/{table}/{id}`. Multiple IDs use `POST /tables/{table}/delete` with `{ "Ids": [1, 2, 3], "User": 96 }`. The node detects comma-separated IDs and uses the appropriate method automatically.
+
+**Nested record creation** — The API supports creating related records in a single POST by nesting JSON objects on FK fields (e.g. creating a Household with an Address in one call). Currently supported via the Raw JSON input mode.
+
+**$select advanced syntax** — Use `FK_ID_Table.Column` for joins, aggregates like `SUM(Amount) AS Total`, and special columns:
+- `Member_Status_ID_Table.Member_Status` — FK join
+- `Household_ID_Table_Address_ID_Table.City` — chained FK joins
+- `dp_Created.*, dp_Updated.*` — audit log (who created/updated, when)
+- `dp_fileUniqueId` — default image file GUID
+- `SUM(Donation_Amount) AS Total` — aggregate functions with `$groupby`
 
 **Auto-pagination** — Without explicit `$top`/`$skip`, the API returns a default page (not all records). The Get Many operation's "Return All" toggle auto-paginates in 1000-record batches.
 

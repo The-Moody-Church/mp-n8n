@@ -1,5 +1,5 @@
 import type { INodeProperties } from 'n8n-workflow';
-import { responseSelectField } from '../../shared/descriptions';
+import { auditUserField, responseSelectField } from '../../shared/descriptions';
 
 const show = {
 	operation: ['create'],
@@ -97,6 +97,10 @@ export const tableCreateDescription: INodeProperties[] = [
 	},
 	{
 		...responseSelectField,
+		displayOptions: { show },
+	},
+	{
+		...auditUserField,
 		displayOptions: { show },
 	},
 ];

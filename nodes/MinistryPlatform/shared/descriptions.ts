@@ -88,7 +88,7 @@ export const queryOptions: INodeProperties = {
 			default: '',
 			placeholder: "Contacts.Display_Name = 'Smith'",
 			description:
-				"OData-style filter expression. Escape single quotes by doubling them (e.g. O''Brien). IIS has a ~4096 char URL limit — large IN() clauses may need to be split across multiple requests.",
+				"SQL WHERE clause syntax. Supports LIKE, IN(), GETDATE(), IS NULL, boolean logic. Escape single quotes by doubling them (O''Brien). Long filters auto-switch to POST to avoid URL limits.",
 		},
 		{
 			displayName: '$Globalfilterid',
@@ -136,7 +136,7 @@ export const queryOptions: INodeProperties = {
 			default: '',
 			placeholder: 'Contact_ID, Display_Name, Email_Address',
 			description:
-				'Comma-separated list of columns to return. Use FK_ID_Table.Column for joins (e.g. Member_Status_ID_Table.Member_Status). Contributes to URL length (~4096 char IIS limit).',
+				'Comma-separated list of columns. Supports FK joins (FK_ID_Table.Column), aggregates (SUM(Amount) AS Total), audit joins (dp_Created.*, dp_Updated.*), and dp_fileUniqueId for images.',
 		},
 		{
 			displayName: '$Skip',
@@ -179,4 +179,16 @@ export const responseSelectField: INodeProperties = {
 	default: '',
 	placeholder: 'Contact_ID, Display_Name',
 	description: 'Comma-separated list of columns to return in the response after create/update',
+};
+
+/**
+ * $User option for write operations — controls which MP user appears in the audit log.
+ */
+export const auditUserField: INodeProperties = {
+	displayName: 'Audit User ID',
+	name: 'auditUserId',
+	type: 'number',
+	default: 0,
+	description:
+		'MP User ID to record in the audit log for this operation. If 0, uses the API client\'s default user. Useful for attributing changes to the correct person.',
 };

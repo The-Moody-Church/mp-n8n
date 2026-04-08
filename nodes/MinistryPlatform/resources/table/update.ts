@@ -1,5 +1,5 @@
 import type { INodeProperties } from 'n8n-workflow';
-import { recordIdField, responseSelectField } from '../../shared/descriptions';
+import { auditUserField, recordIdField, responseSelectField } from '../../shared/descriptions';
 
 const show = {
 	operation: ['update'],
@@ -139,6 +139,10 @@ export const tableUpdateDescription: INodeProperties[] = [
 	},
 	{
 		...responseSelectField,
+		displayOptions: { show },
+	},
+	{
+		...auditUserField,
 		displayOptions: { show },
 	},
 	{

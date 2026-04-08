@@ -125,22 +125,49 @@ export async function mpApiRequest(
 	const baseUrl = (credentials.baseUrl as string).replace(/\/+$/, '');
 	const url = `${baseUrl}/ministryplatformapi${endpoint}`;
 
-	// Check URL length before sending — IIS returns a cryptic 404 when exceeded
+	// If a GET request would exceed the IIS ~4096 char URL limit,
+	// automatically switch to POST /tables/{table}/get which accepts
+	// query parameters in the request body instead of the URL.
+	let actualMethod = method;
+	let actualUrl = url;
+	let actualQs = qs;
+	let actualBody = body;
+
 	if (method === 'GET') {
 		const estimatedLength = estimateUrlLength(url, qs);
 		if (estimatedLength > MAX_URL_LENGTH) {
-			throw new Error(
-				`Request URL is ~${estimatedLength} characters, which exceeds the IIS limit of ~${MAX_URL_LENGTH}. ` +
-					'This typically happens with large $filter expressions (e.g. many IDs in an IN clause). ' +
-					'Try reducing the filter size, removing unnecessary $select columns, or splitting into multiple requests.',
-			);
+			const tableMatch = endpoint.match(/^\/tables\/([^/]+)$/);
+			if (tableMatch) {
+				actualMethod = 'POST';
+				actualUrl = `${baseUrl}/ministryplatformapi/tables/${tableMatch[1]}/get`;
+				actualQs = {};
+
+				// Convert query string params to POST body format
+				const postBody: IDataObject = {};
+				if (qs['$select']) postBody.Select = qs['$select'];
+				if (qs['$filter']) postBody.Filter = qs['$filter'];
+				if (qs['$orderby']) postBody.OrderBy = qs['$orderby'];
+				if (qs['$groupby']) postBody.GroupBy = qs['$groupby'];
+				if (qs['$having']) postBody.Having = qs['$having'];
+				if (qs['$top']) postBody.Top = qs['$top'];
+				if (qs['$skip']) postBody.Skip = qs['$skip'];
+				if (qs['$distinct']) postBody.Distinct = qs['$distinct'];
+				if (qs['$search']) postBody.Search = qs['$search'];
+
+				actualBody = postBody;
+			} else {
+				throw new Error(
+					`Request URL is ~${estimatedLength} characters, which exceeds the IIS limit of ~${MAX_URL_LENGTH}. ` +
+						'Try reducing the filter size, removing unnecessary $select columns, or splitting into multiple requests.',
+				);
+			}
 		}
 	}
 
 	const options: IHttpRequestOptions = {
-		method,
-		url,
-		qs,
+		method: actualMethod,
+		url: actualUrl,
+		qs: actualQs,
 		headers: {
 			Accept: 'application/json',
 			'Content-Type': 'application/json',
@@ -148,8 +175,8 @@ export async function mpApiRequest(
 		json: true,
 	};
 
-	if (body !== undefined) {
-		options.body = body;
+	if (actualBody !== undefined) {
+		options.body = actualBody;
 	}
 
 	const cacheKey = `${credentials.clientId}:${baseUrl}`;
