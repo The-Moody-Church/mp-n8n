@@ -39,13 +39,13 @@ export class MinistryPlatformApi implements ICredentialType {
 
 	properties: INodeProperties[] = [
 		{
-			displayName: 'Base URL',
+			displayName: 'Platform URL',
 			name: 'baseUrl',
 			type: 'string',
 			default: '',
-			placeholder: 'https://my.ministryplatform.com/ministryplatformapi',
+			placeholder: 'https://churchname.ministryplatform.com',
 			description:
-				'The base URL of your Ministry Platform API (must use HTTPS, e.g. https://my.ministryplatform.com/ministryplatformapi)',
+				'Your Ministry Platform URL (e.g. https://churchname.ministryplatform.com). The /ministryplatformapi path is added automatically.',
 			required: true,
 		},
 		{
@@ -112,7 +112,7 @@ export class MinistryPlatformApi implements ICredentialType {
 			new URL(baseUrl);
 		} catch {
 			throw new Error(
-				'Invalid Base URL format. Expected: https://my.ministryplatform.com/ministryplatformapi',
+				'Invalid Platform URL format. Expected: https://churchname.ministryplatform.com',
 			);
 		}
 
@@ -131,7 +131,7 @@ export class MinistryPlatformApi implements ICredentialType {
 
 		const tokenResponse = (await this.helpers.httpRequest({
 			method: 'POST',
-			url: `${baseUrl}/oauth/connect/token`,
+			url: `${baseUrl}/ministryplatformapi/oauth/connect/token`,
 			headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
 			body: new URLSearchParams({
 				grant_type: 'client_credentials',
@@ -162,7 +162,7 @@ export class MinistryPlatformApi implements ICredentialType {
 	test: ICredentialTestRequest = {
 		request: {
 			method: 'GET',
-			url: '={{$credentials.baseUrl}}/tables',
+			url: '={{$credentials.baseUrl}}/ministryplatformapi/tables',
 			headers: {
 				Accept: 'application/json',
 			},

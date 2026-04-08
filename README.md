@@ -6,13 +6,16 @@ This node connects to the Ministry Platform REST API and provides a GUI-driven i
 
 ## Features
 
-- **Table Operations** — Get, create, and update records on any MP table with dynamic dropdowns
-- **Stored Procedures** — Execute stored procedures with parameter input
+- **Table Operations** — Full CRUD: get, create, update, and delete records on any MP table with dynamic dropdowns
+- **Stored Procedures** — List available procedures and execute them with parameters
 - **Communications** — Send email and SMS messages
 - **Files** — Retrieve file attachments and thumbnails
-- **Dynamic Dropdowns** — Table and procedure lists are fetched from your MP instance
-- **Query Support** — Full support for `$select`, `$filter`, `$orderby`, `$top`, `$skip`, `$groupby`, `$having`, and `$distinct`
-- **OAuth2 Authentication** — Client credentials flow, same auth pattern used by all MP integrations
+- **Dynamic Dropdowns** — Table, procedure, and field name lists are fetched from your MP instance
+- **Query Support** — Full support for `$select`, `$filter`, `$search`, `$orderby`, `$top`, `$skip`, `$groupby`, `$having`, and `$distinct`
+- **OAuth2 Authentication** — Client credentials flow with automatic token caching and 401 retry
+- **Clear Error Messages** — Permission errors (403), not found (404), and other API errors include actionable troubleshooting guidance
+
+> **Important: This node can create, modify, and delete real records in Ministry Platform.** MP is a shared production database with real church member data. We strongly recommend creating a dedicated n8n API user in MP and granting it only the specific table/page permissions your workflows require. This limits the blast radius if a workflow has a bug or is misconfigured.
 
 ## Prerequisites
 
@@ -23,10 +26,12 @@ This node connects to the Ministry Platform REST API and provides a GUI-driven i
 ### Setting Up an API Client in Ministry Platform
 
 1. In MP, go to **Administration > API Clients**
-2. Create a new client or use an existing one
+2. Create a new API client dedicated to n8n (don't reuse an existing one with broad permissions)
 3. Note the **Client ID** and **Client Secret**
-4. Ensure the client has appropriate permissions for the tables/procedures you need
-5. Your base URL is typically: `https://yourchurch.ministryplatform.com/ministryplatformapi`
+4. Go to **Administration > API Client Pages** and grant access only to the tables your workflows need
+5. Your platform URL is typically: `https://churchname.ministryplatform.com`
+
+> **Tip: Least-privilege access.** If your workflow only reads from Contacts, only grant Select permission on Contacts. If a workflow writes to Contact_Log, grant Insert on Contact_Log. Don't grant Delete unless a workflow specifically needs it. This way, a 403 error in n8n means "this workflow is trying to do something it shouldn't" rather than silently modifying unexpected data.
 
 ## Installation
 
@@ -80,7 +85,7 @@ Create credentials in n8n with:
 
 | Field | Description | Example |
 |-------|-------------|---------|
-| **Base URL** | Your MP API base URL | `https://my.ministryplatform.com/ministryplatformapi` |
+| **Platform URL** | Your MP platform URL | `https://churchname.ministryplatform.com` |
 | **Client ID** | OAuth2 client ID | From MP Admin > API Clients |
 | **Client Secret** | OAuth2 client secret | From MP Admin > API Clients |
 | **Scope** | OAuth2 scope | `http://www.thinkministry.com/dataplatform/scopes/all` (default) |
@@ -115,14 +120,27 @@ Create credentials in n8n with:
 4. For updates, include the primary key field in each object
 5. Optionally use `$select (Response)` to control which fields are returned
 
+### Delete a Record
+
+1. Select **Table** as the resource, operation **Delete**
+2. Choose the table and enter the Record ID
+3. The record will be **permanently deleted** — this cannot be undone
+
+> If you get a 403 error, your API client doesn't have Delete permission on that table. This is by design — grant Delete access in MP only when a workflow specifically needs it.
+
 ### Execute a Stored Procedure
 
-1. Select **Stored Procedure** as the resource
+1. Select **Stored Procedure** as the resource, operation **Execute**
 2. Choose a procedure from the dropdown
 3. Provide parameters as a JSON object:
    ```json
    { "@ContactID": 12345 }
    ```
+
+### List Available Stored Procedures
+
+1. Select **Stored Procedure** as the resource, operation **List**
+2. Optionally enter a search term (supports `*` wildcard, e.g. `api_*`)
 
 ### Send an Email or SMS
 

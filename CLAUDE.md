@@ -50,7 +50,7 @@ icons/
 
 ### Ministry Platform API
 
-The MP REST API lives at `{baseUrl}/ministryplatformapi`. Key endpoints:
+The credential stores the platform URL (e.g. `https://churchname.ministryplatform.com`). The node appends `/ministryplatformapi` automatically. Key endpoints:
 
 | Endpoint | Method | Purpose |
 |----------|--------|---------|
@@ -59,7 +59,8 @@ The MP REST API lives at `{baseUrl}/ministryplatformapi`. Key endpoints:
 | `/tables/{table}/{id}` | GET | Get single record by ID |
 | `/tables/{table}` | POST | Create records (JSON array body) |
 | `/tables/{table}` | PUT | Update records (JSON array body, must include PK) |
-| `/procs` | GET | List stored procedures |
+| `/tables/{table}/{id}` | DELETE | Delete a record by ID |
+| `/procs` | GET | List stored procedures (supports `$search`) |
 | `/procs/{proc}` | POST | Execute stored procedure |
 | `/communications` | POST | Send email/SMS |
 | `/files/{id}` | GET | Retrieve file attachment (supports `$thumbnail`) |

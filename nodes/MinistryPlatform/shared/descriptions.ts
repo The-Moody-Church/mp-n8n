@@ -122,6 +122,14 @@ export const queryOptions: INodeProperties = {
 			description: 'Columns to sort by',
 		},
 		{
+			displayName: '$Search',
+			name: '$search',
+			type: 'string',
+			default: '',
+			placeholder: 'Smith',
+			description: 'Search across all searchable fields. Supports * wildcard.',
+		},
+		{
 			displayName: '$Select',
 			name: '$select',
 			type: 'string',
