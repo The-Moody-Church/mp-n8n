@@ -1,0 +1,334 @@
+{
+	"info": {
+		"name": "Ministry Platform REST API",
+		"description": "Complete collection for the Ministry Platform REST API. Covers tables (CRUD + POST-based GET), stored procedures, communications, files, and OAuth2 token exchange.\n\nSetup:\n1. Import this collection\n2. Set the collection variables (baseUrl, clientId, clientSecret)\n3. Run \"Get Access Token\" first — it auto-sets the accessToken variable\n4. All other requests use the token automatically",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"variable": [
+		{
+			"key": "baseUrl",
+			"value": "https://your-instance.ministryplatform.com/ministryplatformapi",
+			"type": "string"
+		},
+		{
+			"key": "clientId",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "clientSecret",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "scope",
+			"value": "http://www.thinkministry.com/dataplatform/scopes/all",
+			"type": "string"
+		},
+		{
+			"key": "accessToken",
+			"value": "",
+			"type": "string"
+		}
+	],
+	"auth": {
+		"type": "bearer",
+		"bearer": [
+			{
+				"key": "token",
+				"value": "{{accessToken}}",
+				"type": "string"
+			}
+		]
+	},
+	"item": [
+		{
+			"name": "OAuth2",
+			"description": "Token exchange using client credentials grant.",
+			"item": [
+				{
+					"name": "Get Access Token",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"var json = pm.response.json();",
+									"if (json.access_token) {",
+									"    pm.collectionVariables.set('accessToken', json.access_token);",
+									"    console.log('Token set, expires in ' + json.expires_in + 's');",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"auth": { "type": "noauth" },
+						"method": "POST",
+						"header": [
+							{ "key": "Content-Type", "value": "application/x-www-form-urlencoded" }
+						],
+						"body": {
+							"mode": "urlencoded",
+							"urlencoded": [
+								{ "key": "grant_type", "value": "client_credentials" },
+								{ "key": "client_id", "value": "{{clientId}}" },
+								{ "key": "client_secret", "value": "{{clientSecret}}" },
+								{ "key": "scope", "value": "{{scope}}" }
+							]
+						},
+						"url": {
+							"raw": "{{baseUrl}}/oauth/connect/token",
+							"host": ["{{baseUrl}}"],
+							"path": ["oauth", "connect", "token"]
+						},
+						"description": "Exchange client credentials for an access token. The test script auto-saves the token to the collection variable."
+					}
+				}
+			]
+		},
+		{
+			"name": "Tables",
+			"description": "CRUD operations on Ministry Platform tables.",
+			"item": [
+				{
+					"name": "List All Tables",
+					"request": {
+						"method": "GET",
+						"url": {
+							"raw": "{{baseUrl}}/tables",
+							"host": ["{{baseUrl}}"],
+							"path": ["tables"]
+						},
+						"description": "Returns all tables accessible to the API client."
+					}
+				},
+				{
+					"name": "Query Records (GET)",
+					"request": {
+						"method": "GET",
+						"url": {
+							"raw": "{{baseUrl}}/tables/Contacts?$select=Contact_ID,Display_Name,Email_Address&$filter=Display_Name LIKE '%Smith%'&$orderby=Display_Name ASC&$top=10",
+							"host": ["{{baseUrl}}"],
+							"path": ["tables", "Contacts"],
+							"query": [
+								{ "key": "$select", "value": "Contact_ID,Display_Name,Email_Address" },
+								{ "key": "$filter", "value": "Display_Name LIKE '%Smith%'" },
+								{ "key": "$orderby", "value": "Display_Name ASC" },
+								{ "key": "$top", "value": "10" },
+								{ "key": "$skip", "value": "0", "disabled": true },
+								{ "key": "$groupby", "value": "", "disabled": true },
+								{ "key": "$having", "value": "", "disabled": true },
+								{ "key": "$distinct", "value": "true", "disabled": true },
+								{ "key": "$search", "value": "", "disabled": true }
+							]
+						},
+						"description": "Query records with SQL WHERE syntax. $filter supports LIKE, IN(), IS NULL, GETDATE(), boolean logic. Single quotes must be doubled: O''Brien."
+					}
+				},
+				{
+					"name": "Query Records (POST-based GET)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "Content-Type", "value": "application/json" }
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n\t\"Select\": \"Contact_ID, Display_Name, Email_Address\",\n\t\"Filter\": \"Display_Name LIKE '%Smith%'\",\n\t\"OrderBy\": \"Display_Name ASC\",\n\t\"Top\": 10\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/tables/Contacts/get",
+							"host": ["{{baseUrl}}"],
+							"path": ["tables", "Contacts", "get"]
+						},
+						"description": "Same as GET but with parameters in the body. Use when the query string would exceed the ~4096 char IIS URL limit (e.g. large IN() clauses).\n\nParameter mapping: $select→Select, $filter→Filter, $orderby→OrderBy, $groupby→GroupBy, $having→Having, $top→Top, $skip→Skip, $distinct→Distinct."
+					}
+				},
+				{
+					"name": "Get Record by ID",
+					"request": {
+						"method": "GET",
+						"url": {
+							"raw": "{{baseUrl}}/tables/Contacts/12345?$select=Contact_ID,Display_Name,Email_Address",
+							"host": ["{{baseUrl}}"],
+							"path": ["tables", "Contacts", "12345"],
+							"query": [
+								{ "key": "$select", "value": "Contact_ID,Display_Name,Email_Address" }
+							]
+						},
+						"description": "Retrieve a single record by primary key."
+					}
+				},
+				{
+					"name": "Create Records",
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "Content-Type", "value": "application/json" }
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "[\n\t{\n\t\t\"Display_Name\": \"Test, User\",\n\t\t\"First_Name\": \"User\",\n\t\t\"Last_Name\": \"Test\"\n\t}\n]"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/tables/Contacts?$select=Contact_ID,Display_Name",
+							"host": ["{{baseUrl}}"],
+							"path": ["tables", "Contacts"],
+							"query": [
+								{ "key": "$select", "value": "Contact_ID,Display_Name", "description": "Columns to return in response" },
+								{ "key": "$User", "value": "", "disabled": true, "description": "MP User ID for audit log" }
+							]
+						},
+						"description": "Create one or more records. Body is a JSON array. $select controls which fields come back. $User sets the audit trail user."
+					}
+				},
+				{
+					"name": "Update Records",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{ "key": "Content-Type", "value": "application/json" }
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "[\n\t{\n\t\t\"Contact_ID\": 12345,\n\t\t\"Nickname\": \"Updated Name\"\n\t}\n]"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/tables/Contacts?$select=Contact_ID,Display_Name,Nickname",
+							"host": ["{{baseUrl}}"],
+							"path": ["tables", "Contacts"],
+							"query": [
+								{ "key": "$select", "value": "Contact_ID,Display_Name,Nickname" },
+								{ "key": "$User", "value": "", "disabled": true },
+								{ "key": "$allowCreate", "value": "true", "disabled": true, "description": "Upsert: create if not found" }
+							]
+						},
+						"description": "Update one or more records. Body is a JSON array — each object must include the primary key. $allowCreate enables upsert."
+					}
+				},
+				{
+					"name": "Delete Record (Single)",
+					"request": {
+						"method": "DELETE",
+						"url": {
+							"raw": "{{baseUrl}}/tables/Contacts/12345",
+							"host": ["{{baseUrl}}"],
+							"path": ["tables", "Contacts", "12345"],
+							"query": [
+								{ "key": "$User", "value": "", "disabled": true }
+							]
+						},
+						"description": "Delete a single record by ID."
+					}
+				},
+				{
+					"name": "Delete Records (Bulk)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "Content-Type", "value": "application/json" }
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n\t\"Ids\": [12345, 12346, 12347],\n\t\"User\": 96\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/tables/Contacts/delete",
+							"host": ["{{baseUrl}}"],
+							"path": ["tables", "Contacts", "delete"]
+						},
+						"description": "Delete multiple records by ID. User field sets the audit trail."
+					}
+				}
+			]
+		},
+		{
+			"name": "Stored Procedures",
+			"description": "List and execute stored procedures.",
+			"item": [
+				{
+					"name": "List Procedures",
+					"request": {
+						"method": "GET",
+						"url": {
+							"raw": "{{baseUrl}}/procs?$search=*",
+							"host": ["{{baseUrl}}"],
+							"path": ["procs"],
+							"query": [
+								{ "key": "$search", "value": "*", "description": "Filter by name, supports * wildcard" }
+							]
+						},
+						"description": "List all stored procedures accessible to the API client."
+					}
+				},
+				{
+					"name": "Execute Procedure",
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "Content-Type", "value": "application/json" }
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n\t\"@ParamName\": \"value\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/procs/api_MPP_MyProcedure",
+							"host": ["{{baseUrl}}"],
+							"path": ["procs", "api_MPP_MyProcedure"]
+						},
+						"description": "Execute a stored procedure with JSON parameters. Response is an array of arrays (not objects)."
+					}
+				}
+			]
+		},
+		{
+			"name": "Communications",
+			"description": "Send email and SMS via Ministry Platform.",
+			"item": [
+				{
+					"name": "Send Communication",
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "Content-Type", "value": "application/json" }
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n\t\"CommunicationType\": \"Email\",\n\t\"AuthorUserId\": 96,\n\t\"FromContactId\": 12345,\n\t\"ReplyToContactId\": 12345,\n\t\"Subject\": \"Test Email\",\n\t\"Body\": \"<p>Hello from the API</p>\",\n\t\"Contacts\": [12345, 67890]\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/communications",
+							"host": ["{{baseUrl}}"],
+							"path": ["communications"]
+						},
+						"description": "Send an email or SMS. CommunicationType: Email or SMS. Contacts is an array of Contact IDs.\n\nOptional fields: IsBulkEmail (boolean), StartDate (schedule send), TextPhoneNumberId (SMS sender)."
+					}
+				}
+			]
+		},
+		{
+			"name": "Files",
+			"description": "Retrieve file attachments.",
+			"item": [
+				{
+					"name": "Get File",
+					"request": {
+						"method": "GET",
+						"url": {
+							"raw": "{{baseUrl}}/files/unique-file-guid-here",
+							"host": ["{{baseUrl}}"],
+							"path": ["files", "unique-file-guid-here"],
+							"query": [
+								{ "key": "$thumbnail", "value": "true", "disabled": true, "description": "Return thumbnail instead of full file" }
+							]
+						},
+						"description": "Download a file attachment by its Unique File ID (GUID). Returns binary data. Enable $thumbnail for a smaller preview."
+					}
+				}
+			]
+		}
+	]
+}
