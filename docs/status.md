@@ -5,6 +5,7 @@
 - Proactive token cache replaces n8n preAuthentication (fixes MP 500-for-expired-token bug)
 - GUI builders for Filter, Columns to Return, and Sort By on Get Many
 - Auto-pagination always on; $top respected as max record limit
+- Postman collection added for direct API testing (all endpoints + auto-save token)
 - Build and lint pass clean on n8n strict mode
 
 ## Deployed Operations

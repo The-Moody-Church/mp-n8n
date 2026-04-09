@@ -39,13 +39,17 @@ nodes/MinistryPlatform/
     file/                              # File attachment operations
       index.ts, get.ts
   shared/
-    transport.ts                       # OAuth2 token exchange + authenticated requests
+    transport.ts                       # Proactive token cache + authenticated requests
     descriptions.ts                    # Shared field definitions (table/proc selectors, query options)
   listSearch/
     getTables.ts                       # Dynamic dropdown — fetches table list from /tables
     getProcedures.ts                   # Dynamic dropdown — fetches proc list from /procs
+    getTableFields.ts                  # Dynamic dropdown — fetches field names from a table
 icons/
   ministry-platform.svg
+postman/
+  MinistryPlatform-API.postman_collection.json   # Postman collection for direct API testing
+  README.md
 ```
 
 ### Ministry Platform API
@@ -100,18 +104,20 @@ The URL length limit is the most commonly hit. In mp-charts, queries with ~240 p
 - `dp_fileUniqueId` — default image file GUID
 - `SUM(Donation_Amount) AS Total` — aggregate functions with `$groupby`
 
-**Auto-pagination** — Without explicit `$top`/`$skip`, the API returns a default page (not all records). The Get Many operation's "Return All" toggle auto-paginates in 1000-record batches.
+**Auto-pagination** — Without explicit `$top`/`$skip`, the API returns a default page (not all records). The Get Many operation always auto-paginates in 1000-record batches. If `$top` is set, it's respected as the max records to return.
 
 **Response format** — Zero results returns `[]`, not null. Optional FK joins that don't resolve return `null` values in the record. Stored procedures return `unknown[][]` (array of arrays of values), not arrays of objects.
 
-**Token lifetime** — Client credentials tokens are valid for ~1 hour. The node caches tokens with a 60-second safety buffer before expiry.
+**Token lifetime** — Client credentials tokens are valid for ~1 hour. The transport layer caches tokens with a 5-minute refresh buffer before expiry (proactive cache, not relying on n8n's preAuthentication). If a token expires despite the buffer (clock skew), the retry logic detects both 401 and MP's non-standard 500-with-IDX10223 errors.
 
 ### Key Patterns
 
 - **Declarative descriptions**: Node UI is defined via `INodeProperties` arrays, not JSX. Each operation's fields live in their own file and are spread into the parent resource description.
 - **`displayOptions.show`**: Controls which fields appear based on the selected resource/operation.
 - **`resourceLocator`**: Table and procedure selectors use n8n's resource locator with `listSearch` methods that hit the MP API for dynamic dropdowns.
-- **Transport layer**: `shared/transport.ts` handles OAuth2 token exchange and adds the Bearer token to all API requests.
+- **`loadOptions`**: The `getFieldsForFilter` method fetches column names from a table (via `$top=1` query) for filter builder, column picker, and sort builder dropdowns.
+- **GUI builders**: Get Many has `fixedCollection`-based filter and sort builders, plus a `multiOptions` column picker. All merge with raw Query Options for advanced use.
+- **Transport layer**: `shared/transport.ts` manages a proactive token cache and adds the Bearer token to all API requests. Uses `httpRequest` (not `httpRequestWithAuthentication`) for full control over token lifecycle.
 
 ## Code Style
 
@@ -125,6 +131,8 @@ The URL length limit is the most commonly hit. In mp-charts, queries with ~240 p
 Local testing: `npm run dev` starts an n8n instance with this node loaded. Configure credentials in the n8n UI and build a test workflow.
 
 For Docker-based testing on the dev server (ironside), mount the built `dist/` into n8n's custom nodes directory.
+
+For direct API testing without n8n, import the Postman collection from `postman/` — see `postman/README.md` for setup.
 
 ## Context & Documentation
 
