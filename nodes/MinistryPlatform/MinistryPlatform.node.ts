@@ -1,6 +1,8 @@
 import type {
 	IExecuteFunctions,
+	ILoadOptionsFunctions,
 	INodeExecutionData,
+	INodePropertyOptions,
 	INodeType,
 	INodeTypeDescription,
 	IDataObject,
@@ -91,6 +93,78 @@ function sanitizeErrorMessage(message: string): string {
 		.replace(/access_token[=:]\s*\S+/gi, 'access_token=[REDACTED]');
 }
 
+// ── Filter builder helpers ───────────────────────────────────────────────────
+
+function escapeFilterValue(value: string): string {
+	return value.replace(/'/g, "''");
+}
+
+/**
+ * Format a value for a SQL WHERE clause.
+ * Numbers stay unquoted, booleans become 1/0, everything else is single-quoted.
+ */
+function formatFilterValue(value: string): string {
+	const trimmed = value.trim();
+	if (/^-?\d+(\.\d+)?$/.test(trimmed)) return trimmed;
+	if (trimmed.toLowerCase() === 'true') return '1';
+	if (trimmed.toLowerCase() === 'false') return '0';
+	return `'${escapeFilterValue(trimmed)}'`;
+}
+
+/**
+ * Build a SQL WHERE clause from the GUI filter conditions.
+ */
+function buildFilterString(
+	conditions: Array<{ field: string; operator: string; value?: string }>,
+	combine: string,
+): string {
+	const parts: string[] = [];
+
+	for (const { field, operator, value } of conditions) {
+		if (!field) continue;
+		const v = value ?? '';
+
+		switch (operator) {
+			case 'eq':
+				parts.push(`${field} = ${formatFilterValue(v)}`);
+				break;
+			case '<>':
+			case '>':
+			case '>=':
+			case '<':
+			case '<=':
+				parts.push(`${field} ${operator} ${formatFilterValue(v)}`);
+				break;
+			case 'LIKE':
+				parts.push(`${field} LIKE '%${escapeFilterValue(v)}%'`);
+				break;
+			case 'NOT LIKE':
+				parts.push(`${field} NOT LIKE '%${escapeFilterValue(v)}%'`);
+				break;
+			case 'STARTS_WITH':
+				parts.push(`${field} LIKE '${escapeFilterValue(v)}%'`);
+				break;
+			case 'ENDS_WITH':
+				parts.push(`${field} LIKE '%${escapeFilterValue(v)}'`);
+				break;
+			case 'IS NULL':
+				parts.push(`${field} IS NULL`);
+				break;
+			case 'IS NOT NULL':
+				parts.push(`${field} IS NOT NULL`);
+				break;
+			case 'IN':
+			case 'NOT IN': {
+				const items = v.split(',').map((item) => formatFilterValue(item));
+				parts.push(`${field} ${operator} (${items.join(', ')})`);
+				break;
+			}
+		}
+	}
+
+	return parts.join(` ${combine} `);
+}
+
 export class MinistryPlatform implements INodeType {
 	description: INodeTypeDescription = {
 		displayName: 'Ministry Platform',
@@ -152,6 +226,36 @@ export class MinistryPlatform implements INodeType {
 			getProcedures,
 			getTableFields,
 		},
+		loadOptions: {
+			async getFieldsForFilter(
+				this: ILoadOptionsFunctions,
+			): Promise<INodePropertyOptions[]> {
+				try {
+					const tableParam = this.getNodeParameter('tableName') as
+						| IDataObject
+						| string;
+					const tableName =
+						typeof tableParam === 'string'
+							? tableParam
+							: String((tableParam as IDataObject).value ?? '');
+
+					if (!tableName || /[/\\]|\.\./.test(tableName)) return [];
+
+					const response = await mpApiRequest.call(this, 'GET', `/tables/${tableName}`, {
+						$top: 1,
+					});
+
+					if (Array.isArray(response) && response.length > 0) {
+						return Object.keys(response[0] as IDataObject)
+							.sort()
+							.map((field) => ({ name: field, value: field }));
+					}
+					return [];
+				} catch {
+					return [];
+				}
+			},
+		},
 	};
 
 	async execute(this: IExecuteFunctions): Promise<INodeExecutionData[][]> {
@@ -173,8 +277,30 @@ export class MinistryPlatform implements INodeType {
 					);
 
 					if (operation === 'getAll') {
+						// Build filter from GUI conditions
+						const filterData = this.getNodeParameter(
+							'filterConditions',
+							i,
+							{},
+						) as IDataObject;
+						const conditions = (
+							(filterData.conditions ?? []) as IDataObject[]
+						).map((c) => ({
+							field: c.field as string,
+							operator: c.operator as string,
+							value: c.value as string | undefined,
+						}));
+						const filterCombine = this.getNodeParameter(
+							'filterCombine',
+							i,
+							'AND',
+						) as string;
+						const builderFilter =
+							conditions.length > 0
+								? buildFilterString(conditions, filterCombine)
+								: '';
+
 						const queryOpts = this.getNodeParameter('queryOptions', i, {}) as IDataObject;
-						const returnAll = this.getNodeParameter('returnAll', i, false) as boolean;
 						const qs: IDataObject = {};
 
 						for (const [key, value] of Object.entries(queryOpts)) {
@@ -183,45 +309,79 @@ export class MinistryPlatform implements INodeType {
 							}
 						}
 
-						if (returnAll) {
-							// Auto-paginate in 1000-record batches
-							const PAGE_SIZE = 1000;
-							let skip = 0;
-							let hasMore = true;
-
-							while (hasMore) {
-								const pageQs = { ...qs, $top: PAGE_SIZE, $skip: skip };
-								const response = await mpApiRequest.call(
-									this,
-									'GET',
-									`/tables/${tableName}`,
-									pageQs,
-								);
-								const records = toRecordArray(response);
-
-								for (const record of records) {
-									returnData.push({ json: record, pairedItem: i });
-								}
-
-								hasMore = records.length === PAGE_SIZE;
-								skip += PAGE_SIZE;
+						// Merge builder filter with any raw $filter from Query Options
+						if (builderFilter) {
+							if (qs['$filter']) {
+								qs['$filter'] = `(${builderFilter}) AND (${qs['$filter']})`;
+							} else {
+								qs['$filter'] = builderFilter;
 							}
-						} else {
-							const limit = this.getNodeParameter('limit', i, 50) as number;
+						}
 
-							// Override user's $top if they set one, use the limit field instead
-							qs['$top'] = limit;
+						// Merge column picker with any raw $select
+						const selectColumns = this.getNodeParameter(
+							'selectColumns',
+							i,
+							[],
+						) as string[];
+						if (selectColumns.length > 0) {
+							const pickerSelect = selectColumns.join(', ');
+							qs['$select'] = qs['$select']
+								? `${pickerSelect}, ${qs['$select']}`
+								: pickerSelect;
+						}
 
+						// Merge sort builder with any raw $orderby
+						const orderByData = this.getNodeParameter(
+							'orderByConditions',
+							i,
+							{},
+						) as IDataObject;
+						const sorts = ((orderByData.sorts ?? []) as IDataObject[])
+							.filter((s) => s.field)
+							.map((s) => `${s.field} ${s.direction ?? 'ASC'}`)
+							.join(', ');
+						if (sorts) {
+							qs['$orderby'] = qs['$orderby']
+								? `${sorts}, ${qs['$orderby']}`
+								: sorts;
+						}
+
+						// Auto-paginate in 1000-record batches.
+						// If $top is set, respect it as the max records to return.
+						const PAGE_SIZE = 1000;
+						const maxRecords = qs['$top'] ? Number(qs['$top']) : 0;
+						let skip = qs['$skip'] ? Number(qs['$skip']) : 0;
+						delete qs['$top'];
+						delete qs['$skip'];
+
+						let fetched = 0;
+						let hasMore = true;
+
+						while (hasMore) {
+							const batchSize =
+								maxRecords > 0
+									? Math.min(PAGE_SIZE, maxRecords - fetched)
+									: PAGE_SIZE;
+
+							if (batchSize <= 0) break;
+
+							const pageQs = { ...qs, $top: batchSize, $skip: skip };
 							const response = await mpApiRequest.call(
 								this,
 								'GET',
 								`/tables/${tableName}`,
-								qs,
+								pageQs,
 							);
+							const records = toRecordArray(response);
 
-							for (const record of toRecordArray(response)) {
+							for (const record of records) {
 								returnData.push({ json: record, pairedItem: i });
 							}
+
+							fetched += records.length;
+							skip += records.length;
+							hasMore = records.length === batchSize;
 						}
 					} else if (operation === 'get') {
 						const recordId = validatePathSegment(

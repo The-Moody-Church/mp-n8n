@@ -1,9 +1,16 @@
+/* eslint-disable @n8n/community-nodes/no-http-request-with-manual-auth --
+ * We manage OAuth2 tokens ourselves instead of using httpRequestWithAuthentication
+ * because MP returns HTTP 500 (not 401) for expired tokens. n8n's built-in
+ * preAuthentication refresh only triggers on 401, so stale tokens never get replaced.
+ * Our approach: proactive token cache with 5-minute refresh buffer before expiry.
+ */
 import type {
 	IExecuteFunctions,
 	ILoadOptionsFunctions,
 	IHttpRequestMethods,
 	IDataObject,
 	IHttpRequestOptions,
+	ICredentialDataDecryptedObject,
 } from 'n8n-workflow';
 
 /**
@@ -16,18 +23,105 @@ export async function getServerTimezone(
 	return (credentials.serverTimezone as string) || 'America/Chicago';
 }
 
+// ── Token cache ──────────────────────────────────────────────────────────────
+
+interface CachedToken {
+	accessToken: string;
+	expiresAt: number;
+}
+
+/** Module-level cache shared across all workflow executions in the n8n process. */
+const tokenCache = new Map<string, CachedToken>();
+
+/** Refresh tokens 5 minutes before they expire to avoid sending stale tokens. */
+const TOKEN_BUFFER_MS = 5 * 60 * 1000;
+
+function tokenCacheKey(credentials: ICredentialDataDecryptedObject): string {
+	const baseUrl = (credentials.baseUrl as string).replace(/\/+$/, '');
+	return `${credentials.clientId}:${baseUrl}`;
+}
+
+/**
+ * Get a valid access token, fetching a new one only when the cached token
+ * is missing or within 5 minutes of expiry.
+ */
+async function getAccessToken(
+	context: IExecuteFunctions | ILoadOptionsFunctions,
+	credentials: ICredentialDataDecryptedObject,
+): Promise<string> {
+	const key = tokenCacheKey(credentials);
+	const cached = tokenCache.get(key);
+
+	if (cached && Date.now() < cached.expiresAt - TOKEN_BUFFER_MS) {
+		return cached.accessToken;
+	}
+
+	const baseUrl = (credentials.baseUrl as string).replace(/\/+$/, '');
+	const response = (await context.helpers.httpRequest({
+		method: 'POST',
+		url: `${baseUrl}/ministryplatformapi/oauth/connect/token`,
+		headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+		body: new URLSearchParams({
+			grant_type: 'client_credentials',
+			scope: credentials.scope as string,
+			client_id: credentials.clientId as string,
+			client_secret: credentials.clientSecret as string,
+		}).toString(),
+		json: true,
+	})) as { access_token: string; expires_in: number };
+
+	tokenCache.set(key, {
+		accessToken: response.access_token,
+		expiresAt: Date.now() + response.expires_in * 1000,
+	});
+
+	return response.access_token;
+}
+
+// ── Token-expiry detection (safety net for clock skew) ───────────────────────
+
+/**
+ * Check if an error indicates an expired token.
+ * MP returns 401 for some auth failures but 500 with .NET IDX10223 for expired tokens.
+ */
+function isTokenExpiredError(error: unknown): boolean {
+	const err = error as Record<string, unknown>;
+	const httpCode = String(err?.httpCode ?? '');
+	const message = String(err?.message ?? '');
+
+	// Standard 401
+	if (httpCode === '401' || /\b401\b/.test(message)) return true;
+
+	// MP wraps expired-token as 500 with .NET IDX10223 error.
+	// Check message, description, and response body.
+	const texts: string[] = [
+		message,
+		String(err?.description ?? ''),
+		String((err?.cause as Record<string, unknown>)?.message ?? ''),
+	];
+
+	// AxiosError shape: cause.response.data may contain the MP error body
+	const cause = err?.cause as Record<string, unknown> | undefined;
+	const response = cause?.response as Record<string, unknown> | undefined;
+	const data = response?.data;
+	if (data) {
+		texts.push(typeof data === 'string' ? data : JSON.stringify(data));
+	}
+
+	return texts.some((t) => t.includes('IDX10223'));
+}
+
+/** Tracks whether we've already retried for a credential (prevents loops). */
+const retriedAuth = new Map<string, boolean>();
+
+// ── URL length helpers ───────────────────────────────────────────────────────
+
 /**
  * Known Ministry Platform API limits.
  * IIS has a ~4096 character URL limit. Exceeding it returns a cryptic 404
  * instead of a clear error. We check before sending and give a helpful message.
  */
 const MAX_URL_LENGTH = 4096;
-
-/**
- * Tracks whether we've already retried after a 401 for a given credential.
- * On 401, we retry once — n8n's preAuthentication will fetch a fresh token.
- */
-const retried401 = new Map<string, boolean>();
 
 /**
  * Estimate the full URL length including query string parameters.
@@ -43,11 +137,14 @@ function estimateUrlLength(url: string, qs: IDataObject): number {
 	return url.length + queryString.length;
 }
 
+// ── Public API ───────────────────────────────────────────────────────────────
+
 /**
  * Make an authenticated JSON request to the Ministry Platform API.
  * Includes:
+ * - Proactive token refresh (5-min buffer before expiry)
  * - Automatic POST /tables/{table}/get fallback for long URLs
- * - 401 auto-retry with fresh token
+ * - Expired-token retry for clock skew edge cases
  */
 export async function mpApiRequest(
 	this: IExecuteFunctions | ILoadOptionsFunctions,
@@ -99,6 +196,9 @@ export async function mpApiRequest(
 		}
 	}
 
+	const token = await getAccessToken(this, credentials);
+	const key = tokenCacheKey(credentials);
+
 	const options: IHttpRequestOptions = {
 		method: actualMethod,
 		url: actualUrl,
@@ -106,6 +206,7 @@ export async function mpApiRequest(
 		headers: {
 			Accept: 'application/json',
 			'Content-Type': 'application/json',
+			Authorization: `Bearer ${token}`,
 		},
 		json: true,
 	};
@@ -114,30 +215,25 @@ export async function mpApiRequest(
 		options.body = actualBody;
 	}
 
-	const cacheKey = `${credentials.clientId}:${baseUrl}`;
-
 	try {
-		return await this.helpers.httpRequestWithAuthentication.call(
-			this,
-			'ministryPlatformApi',
-			options,
-		);
+		return await this.helpers.httpRequest(options);
 	} catch (error) {
-		const errorMessage = (error as Error).message || '';
-
-		// On 401, retry once — preAuthentication will fetch a fresh token
-		if (errorMessage.includes('401') && !retried401.get(cacheKey)) {
-			retried401.set(cacheKey, true);
+		// Safety net: if the token expired despite the 5-min buffer (clock skew,
+		// cold start, etc.), clear the cache and retry once with a fresh token.
+		if (isTokenExpiredError(error) && !retriedAuth.get(key)) {
+			retriedAuth.set(key, true);
+			tokenCache.delete(key);
 			try {
-				const result = await this.helpers.httpRequestWithAuthentication.call(
-					this,
-					'ministryPlatformApi',
-					options,
-				);
-				retried401.delete(cacheKey);
+				const freshToken = await getAccessToken(this, credentials);
+				options.headers = {
+					...options.headers,
+					Authorization: `Bearer ${freshToken}`,
+				};
+				const result = await this.helpers.httpRequest(options);
+				retriedAuth.delete(key);
 				return result;
 			} catch (retryError) {
-				retried401.delete(cacheKey);
+				retriedAuth.delete(key);
 				throw retryError;
 			}
 		}
@@ -156,19 +252,38 @@ export async function mpApiRequestBinary(
 ): Promise<Buffer> {
 	const credentials = await this.getCredentials('ministryPlatformApi');
 	const baseUrl = (credentials.baseUrl as string).replace(/\/+$/, '');
+	const token = await getAccessToken(this, credentials);
+	const key = tokenCacheKey(credentials);
 
-	const response = await this.helpers.httpRequestWithAuthentication.call(
-		this,
-		'ministryPlatformApi',
-		{
-			method: 'GET',
-			url: `${baseUrl}/ministryplatformapi${endpoint}`,
-			qs,
-			encoding: 'arraybuffer',
-			returnFullResponse: true,
-			json: false,
+	const options: IHttpRequestOptions = {
+		method: 'GET',
+		url: `${baseUrl}/ministryplatformapi${endpoint}`,
+		qs,
+		headers: {
+			Authorization: `Bearer ${token}`,
 		},
-	);
+		encoding: 'arraybuffer',
+		returnFullResponse: true,
+		json: false,
+	};
 
-	return response as Buffer;
+	try {
+		return (await this.helpers.httpRequest(options)) as Buffer;
+	} catch (error) {
+		if (isTokenExpiredError(error) && !retriedAuth.get(key)) {
+			retriedAuth.set(key, true);
+			tokenCache.delete(key);
+			try {
+				const freshToken = await getAccessToken(this, credentials);
+				options.headers = { ...options.headers, Authorization: `Bearer ${freshToken}` };
+				const result = (await this.helpers.httpRequest(options)) as Buffer;
+				retriedAuth.delete(key);
+				return result;
+			} catch (retryError) {
+				retriedAuth.delete(key);
+				throw retryError;
+			}
+		}
+		throw error;
+	}
 }
