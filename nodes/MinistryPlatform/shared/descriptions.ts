@@ -9,7 +9,7 @@ export const tableSelect: INodeProperties = {
 	type: 'resourceLocator',
 	default: { mode: 'list', value: '' },
 	required: true,
-	description: 'The Ministry Platform table to operate on',
+	description: 'The Ministry Platform table to query. Common tables: Contacts (people), Events, Groups, Participants, Group_Participants, Households, Activities, Event_Participants, Communication_Messages.',
 	modes: [
 		{
 			displayName: 'From List',
@@ -88,7 +88,7 @@ export const queryOptions: INodeProperties = {
 			default: '',
 			placeholder: "Contacts.Display_Name = 'Smith'",
 			description:
-				"SQL WHERE clause syntax. Supports LIKE, IN(), GETDATE(), IS NULL, boolean logic. Escape single quotes by doubling them (O''Brien). Long filters auto-switch to POST to avoid URL limits.",
+				"SQL WHERE clause. Examples: Display_Name LIKE '%Smith%', Contact_ID = 12345, Event_Start_Date >= '2026-01-01', Email_Address IS NOT NULL, Status_ID IN (1,2). Single-quote strings, no quotes on numbers. Escape apostrophes by doubling: O''Brien.",
 		},
 		{
 			displayName: '$Globalfilterid',
@@ -136,7 +136,7 @@ export const queryOptions: INodeProperties = {
 			default: '',
 			placeholder: 'Contact_ID, Display_Name, Email_Address',
 			description:
-				'Comma-separated list of columns. Supports FK joins (FK_ID_Table.Column), aggregates (SUM(Amount) AS Total), audit joins (dp_Created.*, dp_Updated.*), and dp_fileUniqueId for images.',
+				'Comma-separated columns to return. Use specific columns to reduce response size: Contact_ID, Display_Name, Email_Address. FK joins: Congregation_ID_Table.Congregation_Name. Leave empty for all columns.',
 		},
 		{
 			displayName: '$Skip',

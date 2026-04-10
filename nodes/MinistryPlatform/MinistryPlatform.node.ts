@@ -174,7 +174,7 @@ export class MinistryPlatform implements INodeType {
 		version: 1,
 		subtitle: '={{$parameter["operation"] + ": " + $parameter["resource"]}}',
 		description:
-			'Read and write data from Ministry Platform via the REST API. Tip: avoid firing many MP nodes in parallel — the API supports ~6 concurrent connections before timing out.',
+			'Read and write data from Ministry Platform, a church management database. Common tables: Contacts, Events, Groups, Participants, Group_Participants, Households, Activities, Event_Participants. Filter syntax is SQL WHERE (e.g. Display_Name LIKE \'%Smith%\'). Limit concurrency to ~6.',
 		defaults: {
 			name: 'Ministry Platform',
 		},

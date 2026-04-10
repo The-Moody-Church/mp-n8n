@@ -42,7 +42,7 @@ export const tableDescription: INodeProperties[] = [
 				name: 'Get Many',
 				value: 'getAll',
 				action: 'Get records from a table',
-				description: 'Retrieve multiple records with optional filtering',
+				description: 'Query records from a table with filters, column selection, and sorting. Returns many matching records by default; set $top to limit.',
 			},
 			{
 				name: 'Update',
