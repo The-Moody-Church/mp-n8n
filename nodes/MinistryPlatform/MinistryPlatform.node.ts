@@ -479,7 +479,7 @@ export class MinistryPlatform implements INodeType {
 						const qs: IDataObject = {};
 
 						if (selectColumns) {
-							qs['$select'] = qualifyColumnNames(selectColumns, tableName);
+							qs['$select'] = selectColumns;
 						}
 
 						const response = await mpApiRequest.call(
@@ -502,7 +502,7 @@ export class MinistryPlatform implements INodeType {
 						let body: IDataObject[];
 
 						if (responseSelect) {
-							qs['$select'] = qualifyColumnNames(responseSelect, tableName);
+							qs['$select'] = responseSelect;
 						}
 						if (auditUserId > 0) {
 							qs['$User'] = auditUserId;
@@ -617,7 +617,7 @@ export class MinistryPlatform implements INodeType {
 						let body: IDataObject[];
 
 						if (responseSelect) {
-							qs['$select'] = qualifyColumnNames(responseSelect, tableName);
+							qs['$select'] = responseSelect;
 						}
 						if (auditUserId > 0) {
 							qs['$User'] = auditUserId;
