@@ -681,20 +681,42 @@ export class MinistryPlatform implements INodeType {
 						const replyToContactId = this.getNodeParameter('replyToContactId', i) as number;
 						const subject = this.getNodeParameter('subject', i) as string;
 						const bodyContent = this.getNodeParameter('body', i) as string;
-						const contactsStr = this.getNodeParameter('contacts', i) as string;
+						const contactsRaw = this.getNodeParameter('contacts', i) as
+							| string
+							| number
+							| Array<string | number>;
 						const additionalOptions = this.getNodeParameter('additionalOptions', i, {}) as IDataObject;
 
-						const contacts = contactsStr.split(',').map((idStr) => {
-							const parsed = parseInt(idStr.trim(), 10);
-							if (isNaN(parsed) || parsed < 1) {
-								throw new NodeOperationError(
-									this.getNode(),
-									`Invalid contact ID: "${idStr.trim()}"`,
-									{ itemIndex: i },
-								);
-							}
-							return parsed;
-						});
+						// Accept a number (single ID via expression), an array of IDs, or
+						// a comma-separated string typed by hand. Normalize into number[].
+						const rawTokens: Array<string | number> = Array.isArray(contactsRaw)
+							? contactsRaw
+							: typeof contactsRaw === 'string'
+								? contactsRaw.split(',')
+								: [contactsRaw];
+
+						const contacts = rawTokens
+							.map((token) => String(token).trim())
+							.filter((token) => token.length > 0)
+							.map((token) => {
+								const parsed = parseInt(token, 10);
+								if (isNaN(parsed) || parsed < 1) {
+									throw new NodeOperationError(
+										this.getNode(),
+										`Invalid contact ID: "${token}"`,
+										{ itemIndex: i },
+									);
+								}
+								return parsed;
+							});
+
+						if (contacts.length === 0) {
+							throw new NodeOperationError(
+								this.getNode(),
+								'At least one Recipient Contact ID is required',
+								{ itemIndex: i },
+							);
+						}
 
 						const communicationBody: IDataObject = {
 							CommunicationType: communicationType,
