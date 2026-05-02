@@ -165,6 +165,86 @@ function buildFilterString(
 	return parts.join(` ${combine} `);
 }
 
+// ── Column qualification ────────────────────────────────────────────────────
+//
+// MP's API generates SQL that joins related tables when $select uses FK syntax
+// (e.g. `Foo_ID_Table.Bar`). If any other clause then references a bare column
+// name that exists on both the base table and a joined table, SQL Server throws
+// "Ambiguous column name". We pre-qualify bare identifiers with the selected
+// table name so the user can keep filters/sorts simple.
+
+const SQL_RESERVED = new Set([
+	'AND', 'OR', 'NOT', 'NULL', 'IS', 'LIKE', 'IN', 'BETWEEN',
+	'AS', 'ASC', 'DESC', 'TRUE', 'FALSE',
+	'CASE', 'WHEN', 'THEN', 'ELSE', 'END',
+	'EXISTS', 'ALL', 'ANY', 'SOME', 'UNION', 'INTERSECT', 'EXCEPT',
+	'DISTINCT', 'TOP', 'OVER',
+]);
+
+function qualifyIdentifiersInSegment(segment: string, tableName: string): string {
+	return segment.replace(
+		/(?<![.\w])([A-Za-z_][A-Za-z0-9_]*)(?![\w(.])/g,
+		(match, _g1: string, offset: number, full: string) => {
+			if (SQL_RESERVED.has(match.toUpperCase())) return match;
+			// Skip aliases — identifier following an `AS` keyword is a label, not a column.
+			const before = full.substring(0, offset).replace(/\s+$/, '');
+			if (/\bAS$/i.test(before)) return match;
+			return `${tableName}.${match}`;
+		},
+	);
+}
+
+/**
+ * Prefix bare column references in a SQL-shaped expression with the given table
+ * name. Skips already-prefixed identifiers, SQL keywords, function calls,
+ * string literals, and AS aliases.
+ */
+function qualifyColumnNames(expr: string | undefined, tableName: string): string | undefined {
+	if (!expr || !tableName) return expr;
+	const result: string[] = [];
+	let i = 0;
+	while (i < expr.length) {
+		if (expr[i] === "'") {
+			// Copy through the closing quote, honoring '' as an escaped single quote.
+			let j = i + 1;
+			while (j < expr.length) {
+				if (expr[j] === "'") {
+					if (expr[j + 1] === "'") {
+						j += 2;
+						continue;
+					}
+					j++;
+					break;
+				}
+				j++;
+			}
+			result.push(expr.substring(i, j));
+			i = j;
+		} else {
+			let j = i;
+			while (j < expr.length && expr[j] !== "'") j++;
+			result.push(qualifyIdentifiersInSegment(expr.substring(i, j), tableName));
+			i = j;
+		}
+	}
+	return result.join('');
+}
+
+/**
+ * Apply column qualification to clauses where SQL Server ambiguity actually
+ * fires. We deliberately skip `$select`: MP resolves bare select columns
+ * flexibly (including columns that live on joined tables), and forcibly
+ * prefixing them with the base table can produce "Invalid column name" errors.
+ */
+function qualifyQueryClauses(qs: IDataObject, tableName: string): void {
+	for (const key of ['$filter', '$orderby', '$groupby', '$having'] as const) {
+		const value = qs[key];
+		if (typeof value === 'string' && value.length > 0) {
+			qs[key] = qualifyColumnNames(value, tableName);
+		}
+	}
+}
+
 export class MinistryPlatform implements INodeType {
 	description: INodeTypeDescription = {
 		displayName: 'Ministry Platform',
@@ -346,6 +426,11 @@ export class MinistryPlatform implements INodeType {
 								? `${sorts}, ${qs['$orderby']}`
 								: sorts;
 						}
+
+						// Pre-qualify bare column references against the selected table so
+						// queries with FK joins don't trigger SQL Server "Ambiguous column"
+						// errors when MP wraps the query for pagination/aggregation.
+						qualifyQueryClauses(qs, tableName);
 
 						// Auto-paginate in 1000-record batches.
 						// If $top is set, respect it as the max records to return.
@@ -596,20 +681,42 @@ export class MinistryPlatform implements INodeType {
 						const replyToContactId = this.getNodeParameter('replyToContactId', i) as number;
 						const subject = this.getNodeParameter('subject', i) as string;
 						const bodyContent = this.getNodeParameter('body', i) as string;
-						const contactsStr = this.getNodeParameter('contacts', i) as string;
+						const contactsRaw = this.getNodeParameter('contacts', i) as
+							| string
+							| number
+							| Array<string | number>;
 						const additionalOptions = this.getNodeParameter('additionalOptions', i, {}) as IDataObject;
 
-						const contacts = contactsStr.split(',').map((idStr) => {
-							const parsed = parseInt(idStr.trim(), 10);
-							if (isNaN(parsed) || parsed < 1) {
-								throw new NodeOperationError(
-									this.getNode(),
-									`Invalid contact ID: "${idStr.trim()}"`,
-									{ itemIndex: i },
-								);
-							}
-							return parsed;
-						});
+						// Accept a number (single ID via expression), an array of IDs, or
+						// a comma-separated string typed by hand. Normalize into number[].
+						const rawTokens: Array<string | number> = Array.isArray(contactsRaw)
+							? contactsRaw
+							: typeof contactsRaw === 'string'
+								? contactsRaw.split(',')
+								: [contactsRaw];
+
+						const contacts = rawTokens
+							.map((token) => String(token).trim())
+							.filter((token) => token.length > 0)
+							.map((token) => {
+								const parsed = parseInt(token, 10);
+								if (isNaN(parsed) || parsed < 1) {
+									throw new NodeOperationError(
+										this.getNode(),
+										`Invalid contact ID: "${token}"`,
+										{ itemIndex: i },
+									);
+								}
+								return parsed;
+							});
+
+						if (contacts.length === 0) {
+							throw new NodeOperationError(
+								this.getNode(),
+								'At least one Recipient Contact ID is required',
+								{ itemIndex: i },
+							);
+						}
 
 						const communicationBody: IDataObject = {
 							CommunicationType: communicationType,

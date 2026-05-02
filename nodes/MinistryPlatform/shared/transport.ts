@@ -114,6 +114,86 @@ function isTokenExpiredError(error: unknown): boolean {
 /** Tracks whether we've already retried for a credential (prevents loops). */
 const retriedAuth = new Map<string, boolean>();
 
+// ── Error enrichment ─────────────────────────────────────────────────────────
+
+/**
+ * Extract the MP error response body (if any) from an axios-shaped error.
+ * MP usually returns useful detail in the response body — surfacing it
+ * turns a generic "Request failed with status code 500" into something
+ * actionable like "Invalid column name 'Foo_Bar'".
+ */
+function extractMpErrorDetail(error: unknown): string | undefined {
+	const err = error as Record<string, unknown>;
+
+	// Try multiple shapes since n8n's helpers.httpRequest lets the raw AxiosError
+	// propagate (body at error.response.data) while the legacy request helper
+	// wraps it differently (body at error.cause.response.data or error.error).
+	const directResponse = err?.response as Record<string, unknown> | undefined;
+	const cause = err?.cause as Record<string, unknown> | undefined;
+	const causeResponse = cause?.response as Record<string, unknown> | undefined;
+	const data =
+		directResponse?.data ??
+		directResponse?.body ??
+		causeResponse?.data ??
+		causeResponse?.body ??
+		err?.error;
+
+	if (data == null) return undefined;
+	if (typeof data === 'string') return data.slice(0, 2000);
+
+	if (typeof data === 'object') {
+		const obj = data as Record<string, unknown>;
+		// MP sometimes returns { Message: "..." } or { error: "...", error_description: "..." }
+		const candidates = [
+			obj.Message,
+			obj.message,
+			obj.error_description,
+			obj.error,
+			obj.detail,
+			obj.title,
+		].filter((v) => typeof v === 'string' && v.length > 0) as string[];
+
+		if (candidates.length > 0) return candidates.join(' — ').slice(0, 2000);
+
+		try {
+			return JSON.stringify(obj).slice(0, 2000);
+		} catch {
+			return undefined;
+		}
+	}
+	return undefined;
+}
+
+/**
+ * Wrap an httpRequest error so the thrown Error includes the MP API's actual
+ * error message (when available) plus the request method and endpoint path.
+ * Token-expiry errors are passed through untouched so the retry path can detect them.
+ */
+function enrichRequestError(error: unknown, method: string, endpoint: string): Error {
+	const err = error as Record<string, unknown>;
+	const directResponse = err?.response as Record<string, unknown> | undefined;
+	const httpCode =
+		err?.httpCode ??
+		err?.statusCode ??
+		err?.status ??
+		directResponse?.status ??
+		directResponse?.statusCode ??
+		'';
+	const detail = extractMpErrorDetail(error);
+	const baseMessage = String(err?.message ?? 'Request failed');
+	const parts = [`MP ${method} ${endpoint} failed`];
+	if (httpCode) parts.push(`(HTTP ${httpCode})`);
+	if (detail) {
+		parts.push(`: ${detail}`);
+	} else {
+		parts.push(`: ${baseMessage}`);
+	}
+	const wrapped = new Error(parts.join(' '));
+	(wrapped as unknown as { cause?: unknown }).cause = error;
+	(wrapped as unknown as { httpCode?: unknown }).httpCode = httpCode;
+	return wrapped;
+}
+
 // ── URL length helpers ───────────────────────────────────────────────────────
 
 /**
@@ -124,17 +204,31 @@ const retriedAuth = new Map<string, boolean>();
 const MAX_URL_LENGTH = 4096;
 
 /**
- * Estimate the full URL length including query string parameters.
+ * Build the query string with explicit percent-encoding (matches what Swagger sends).
+ * Skips empty/zero/false values to avoid sending no-op params.
+ *
+ * We build this ourselves rather than letting n8n/axios serialize `qs` because
+ * axios's default builder leaves `$`, `,`, and `.` unencoded, and some MP query
+ * shapes (e.g. FK joins like `Foo_ID_Table.Bar`) only parse correctly when the
+ * separator commas are percent-encoded as Swagger does.
+ */
+function buildQueryString(qs: IDataObject): string {
+	const parts: string[] = [];
+	for (const [key, value] of Object.entries(qs)) {
+		if (value === undefined || value === null || value === '' || value === false) continue;
+		// $skip=0 is a meaningful pagination value; drop other zeros (no-op flags).
+		if (value === 0 && key !== '$skip') continue;
+		parts.push(`${encodeURIComponent(key)}=${encodeURIComponent(String(value))}`);
+	}
+	return parts.join('&');
+}
+
+/**
+ * Estimate the full URL length (used for the IIS 4096-char limit check).
  */
 function estimateUrlLength(url: string, qs: IDataObject): number {
-	const qsParts: string[] = [];
-	for (const [key, value] of Object.entries(qs)) {
-		if (value !== undefined && value !== '' && value !== 0 && value !== false) {
-			qsParts.push(`${encodeURIComponent(key)}=${encodeURIComponent(String(value))}`);
-		}
-	}
-	const queryString = qsParts.length > 0 ? `?${qsParts.join('&')}` : '';
-	return url.length + queryString.length;
+	const queryString = buildQueryString(qs);
+	return url.length + (queryString ? queryString.length + 1 : 0);
 }
 
 // ── Public API ───────────────────────────────────────────────────────────────
@@ -199,15 +293,24 @@ export async function mpApiRequest(
 	const token = await getAccessToken(this, credentials);
 	const key = tokenCacheKey(credentials);
 
+	// Build the full URL ourselves so the query string encoding matches Swagger
+	// (e.g. commas as %2C). This avoids axios's default builder leaving them
+	// unencoded, which MP rejects for some query shapes.
+	const queryString = buildQueryString(actualQs);
+	const finalUrl = queryString ? `${actualUrl}?${queryString}` : actualUrl;
+
+	const headers: Record<string, string> = {
+		Accept: 'application/json',
+		Authorization: `Bearer ${token}`,
+	};
+	if (actualBody !== undefined) {
+		headers['Content-Type'] = 'application/json';
+	}
+
 	const options: IHttpRequestOptions = {
 		method: actualMethod,
-		url: actualUrl,
-		qs: actualQs,
-		headers: {
-			Accept: 'application/json',
-			'Content-Type': 'application/json',
-			Authorization: `Bearer ${token}`,
-		},
+		url: finalUrl,
+		headers,
 		json: true,
 	};
 
@@ -234,11 +337,11 @@ export async function mpApiRequest(
 				return result;
 			} catch (retryError) {
 				retriedAuth.delete(key);
-				throw retryError;
+				throw enrichRequestError(retryError, actualMethod, endpoint);
 			}
 		}
 
-		throw error;
+		throw enrichRequestError(error, actualMethod, endpoint);
 	}
 }
 
@@ -255,10 +358,11 @@ export async function mpApiRequestBinary(
 	const token = await getAccessToken(this, credentials);
 	const key = tokenCacheKey(credentials);
 
+	const queryString = buildQueryString(qs);
+	const url = `${baseUrl}/ministryplatformapi${endpoint}`;
 	const options: IHttpRequestOptions = {
 		method: 'GET',
-		url: `${baseUrl}/ministryplatformapi${endpoint}`,
-		qs,
+		url: queryString ? `${url}?${queryString}` : url,
 		headers: {
 			Authorization: `Bearer ${token}`,
 		},
@@ -281,9 +385,9 @@ export async function mpApiRequestBinary(
 				return result;
 			} catch (retryError) {
 				retriedAuth.delete(key);
-				throw retryError;
+				throw enrichRequestError(retryError, 'GET', endpoint);
 			}
 		}
-		throw error;
+		throw enrichRequestError(error, 'GET', endpoint);
 	}
 }
