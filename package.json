@@ -1,5 +1,5 @@
 {
-	"name": "n8n-nodes-ministry-platform",
+	"name": "@moody-church/n8n-nodes-ministry-platform",
 	"version": "0.1.1-beta.1",
 	"description": "n8n community node for Ministry Platform — table CRUD, stored procedures, and communications via the MP REST API",
 	"license": "MIT",

@@ -6,12 +6,12 @@ This package is published to npm as a community node and follows a two-channel r
 
 | Channel | npm dist-tag | Version shape | Audience |
 |---|---|---|---|
-| Stable | `latest` (default) | `0.2.0`, `1.0.0` | What `npm install n8n-nodes-ministry-platform` and the n8n UI install by default |
-| Pre-release | `beta` | `0.2.0-beta.1`, `0.2.0-rc.0` | Opt-in testers — `npm install n8n-nodes-ministry-platform@beta` or pin `@0.2.0-beta.1` in the n8n UI |
+| Stable | `latest` (default) | `0.2.0`, `1.0.0` | What `npm install @moody-church/n8n-nodes-ministry-platform` and the n8n UI install by default |
+| Pre-release | `beta` | `0.2.0-beta.1`, `0.2.0-rc.0` | Opt-in testers — `npm install @moody-church/n8n-nodes-ministry-platform@beta` or pin `@0.2.0-beta.1` in the n8n UI |
 
 PR branches are **not** published to npm. To validate an unmerged branch:
 
-- `docker cp dist/. <n8n-container>:/home/node/.n8n/nodes/node_modules/n8n-nodes-ministry-platform/dist/` and restart n8n (the loop used during local development), or
+- `docker cp dist/. <n8n-container>:/home/node/.n8n/nodes/node_modules/@moody-church/n8n-nodes-ministry-platform/dist/` and restart n8n (the loop used during local development), or
 - `npm install github:The-Moody-Church/mp-n8n#<branch>` for a one-off install in a sandbox.
 
 ## Triggering a release
@@ -85,7 +85,7 @@ Sequence:
 If you need to point `beta` at an already-published version (e.g. you mistakenly tagged a build):
 
 ```sh
-npm dist-tag add n8n-nodes-ministry-platform@0.2.0-beta.1 beta
+npm dist-tag add @moody-church/n8n-nodes-ministry-platform@0.2.0-beta.1 beta
 ```
 
 This rewrites only the pointer — no new version is published.
@@ -95,5 +95,5 @@ This rewrites only the pointer — no new version is published.
 npm allows unpublish only within 72 hours and only when no other package depends on yours. Treat every publish as permanent. If you publish a broken version, the recovery is **publish a fix as a new version** and (if the broken one was on `latest`) move the dist-tag back to the previous good version:
 
 ```sh
-npm dist-tag add n8n-nodes-ministry-platform@<last-good> latest
+npm dist-tag add @moody-church/n8n-nodes-ministry-platform@<last-good> latest
 ```

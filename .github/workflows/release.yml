@@ -89,7 +89,7 @@ jobs:
         run: |
           set -euo pipefail
           VERSION="${{ steps.version.outputs.version }}"
-          if npm view "n8n-nodes-ministry-platform@$VERSION" version 2>/dev/null; then
+          if npm view "@moody-church/n8n-nodes-ministry-platform@$VERSION" version 2>/dev/null; then
             echo "::error::Version $VERSION is already published to npm. Pick a different version."
             exit 1
           fi
