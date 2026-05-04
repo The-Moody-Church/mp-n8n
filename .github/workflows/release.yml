@@ -22,7 +22,8 @@ jobs:
   release:
     runs-on: ubuntu-latest
     permissions:
-      contents: write
+      contents: write       # push the version-bump commit + tag to main
+      id-token: write       # OIDC token for npm Trusted Publishing
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -32,8 +33,11 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
           registry-url: 'https://registry.npmjs.org'
+
+      - name: Upgrade npm to a Trusted-Publishing-capable version
+        run: npm install -g npm@latest
 
       - name: Install dependencies
         run: npm ci
@@ -126,13 +130,15 @@ jobs:
             --generate-notes \
             $PRERELEASE_FLAG
 
-      - name: Publish to npm
+      - name: Publish to npm (Trusted Publishing + provenance)
         if: ${{ inputs.dry_run == false }}
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           set -euo pipefail
-          npm publish --tag "${{ inputs.channel }}" --access public
+          # No NODE_AUTH_TOKEN — npm CLI uses the OIDC token from id-token: write.
+          # Requires a Trusted Publisher to be configured on the package's npm
+          # settings page (see RELEASING.md). --provenance adds the verified
+          # provenance attestation that npm displays on the package page.
+          npm publish --tag "${{ inputs.channel }}" --access public --provenance
 
       - name: Summary
         run: |

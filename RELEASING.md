@@ -48,7 +48,7 @@ Add `-f dry_run=true` for a no-op rehearsal.
 6. Tags `v<version>`.
 7. Pushes the commit and tag to `main`.
 8. Creates a GitHub release with auto-generated notes (marked prerelease for `beta`).
-9. Runs `npm publish --tag <channel>`.
+9. Runs `npm publish --tag <channel> --access public --provenance`. Authenticates to npm via OIDC (Trusted Publishing) — no `NPM_TOKEN` involved.
 
 ## Auto-version rules (when `version` is blank)
 
@@ -63,14 +63,44 @@ For stable releases, **always pass an explicit `version`** — auto-increment fo
 
 ## Required setup (one-time)
 
-Two repository secrets must exist for the workflow to publish:
+This workflow uses **npm Trusted Publishing** — GitHub Actions authenticates to npm via short-lived OIDC tokens, so no long-lived `NPM_TOKEN` secret is stored anywhere. As a side benefit, every published version carries a verified [provenance attestation](https://docs.npmjs.com/generating-provenance-statements) that npm displays on the package page.
 
-- **`NPM_TOKEN`** — an npm Automation token (https://docs.npmjs.com/creating-and-viewing-access-tokens). Create one with **Publish** scope, add it under **Settings → Secrets and variables → Actions** as `NPM_TOKEN`.
-- **`GITHUB_TOKEN`** is provided automatically; no setup needed.
+### 1. Create the npm org
 
-Branch protection on `main` must allow `github-actions[bot]` to push directly. If you require PR review for everything, either:
-- exempt admins / the bot from the rule, or
-- adopt a release-PR pattern instead (the workflow opens a PR with the version bump, you merge, then a tag-pushed workflow publishes). Not implemented today.
+If it doesn't already exist, create the `moody-church` org at https://www.npmjs.com/org/create. The package name `@moody-church/n8n-nodes-ministry-platform` lives under that scope. Add yourself (and any other maintainers) to the org.
+
+### 2. Configure Trusted Publishing on npm
+
+Trusted Publishing has to be configured *per package*. There are two paths depending on whether the package already exists on npm:
+
+**Path A — package not yet published (recommended for our case):**
+
+1. Go to https://www.npmjs.com/package/@moody-church/n8n-nodes-ministry-platform/access (the URL works even if the package doesn't exist yet — npm will show a "pending publisher" form).
+2. Under **Trusted Publisher**, choose **GitHub Actions** and fill in:
+   - Organization or user: `The-Moody-Church`
+   - Repository: `mp-n8n`
+   - Workflow filename: `release.yml`
+   - Environment name: *(leave blank)*
+3. Save. The first publish from this workflow will create the package and bind the trusted publisher.
+
+**Path B — package already published with a token:**
+
+1. Open the package on npm → **Settings** → **Publishing access**.
+2. Add a Trusted Publisher with the same fields as above.
+3. Subsequent publishes from the workflow stop needing `NPM_TOKEN`.
+
+> **Don't create an npm Automation token unless you also want a fallback.** The 2FA-bypass warning npm shows when you create one is real. If you have an old `NPM_TOKEN` secret in the repo, delete it after Trusted Publishing is configured.
+
+### 3. Branch protection on `main`
+
+The workflow pushes the version-bump commit and the tag directly to `main`. If you require PR review for all pushes, either:
+
+- exempt `github-actions[bot]` (or admins) from the protection rule, or
+- adopt a release-PR pattern instead (workflow opens a PR with the version bump; tag-pushed workflow publishes after merge). Not implemented today.
+
+### 4. (Optional) Restrict the workflow to admins
+
+`workflow_dispatch` is gated by repo write access by default. If you want to lock it down further (so anyone with write can't trigger a publish), put it behind a [GitHub Actions environment](https://docs.github.com/en/actions/deployment/targeting-different-environments/using-environments-for-deployment) with required reviewers. Note that if you do this, you must list the same environment name when configuring Trusted Publishing on npm.
 
 ## Promoting a beta to stable
 
