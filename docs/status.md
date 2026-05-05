@@ -27,5 +27,5 @@
 - Implement Custom API Call operation
 - Continue testing all operations against live MP
 - Test POST /tables/{table}/get fallback with large filter
-- Set up GitHub Actions CI/CD for v1 publish
-- Publish to npm as community node
+- Cut first beta to npm via the new Release workflow (`gh workflow run release.yml -f channel=beta`); requires `NPM_TOKEN` repo secret to be added first — see `RELEASING.md`
+- After a beta soaks: cut first stable `0.1.x` to npm `latest` dist-tag

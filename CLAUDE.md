@@ -1,4 +1,4 @@
-# CLAUDE.md — n8n-nodes-ministry-platform
+# CLAUDE.md — @moody-church/n8n-nodes-ministry-platform
 
 n8n community node for Ministry Platform. Connects to the MP REST API to provide table CRUD, stored procedure execution, communications (email/SMS), and file retrieval — all with dropdown-driven UI so users don't need to write code.
 

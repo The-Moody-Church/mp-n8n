@@ -1,4 +1,4 @@
-# n8n-nodes-ministry-platform
+# @moody-church/n8n-nodes-ministry-platform
 
 An [n8n](https://n8n.io/) community node for [Ministry Platform](https://www.ministryplatform.com/) — the church management system by ACST.
 
@@ -41,7 +41,7 @@ This node connects to the Ministry Platform REST API and provides a GUI-driven i
 
 1. Go to **Settings > Community Nodes**
 2. Select **Install a community node**
-3. Enter `n8n-nodes-ministry-platform`
+3. Enter `@moody-church/n8n-nodes-ministry-platform`
 4. Agree to the risks and install
 
 ### Manual / Development
@@ -71,14 +71,14 @@ npm run build
 
 # Copy dist/ into your n8n custom nodes volume
 # Example for a Docker Compose setup:
-docker cp dist/ n8n:/home/node/.n8n/custom/node_modules/n8n-nodes-ministry-platform/dist/
+docker cp dist/. n8n:/home/node/.n8n/custom/node_modules/@moody-church/n8n-nodes-ministry-platform/dist/
 ```
 
 Or add it to your `docker-compose.yml`:
 
 ```yaml
 volumes:
-  - ./n8n-nodes-ministry-platform:/home/node/.n8n/custom/node_modules/n8n-nodes-ministry-platform
+  - ./mp-n8n:/home/node/.n8n/custom/node_modules/@moody-church/n8n-nodes-ministry-platform
 ```
 
 ## Configuration
@@ -169,12 +169,7 @@ npm run lint:fix       # Auto-fix lint issues
 
 ## Publishing
 
-This package uses GitHub Actions to publish to npm with [provenance](https://docs.npmjs.com/generating-provenance-statements) (required for verified n8n community nodes as of May 2026).
-
-To publish a new version:
-1. Update the version in `package.json`
-2. Create a GitHub Release with a tag matching the version (e.g., `v0.1.0`)
-3. The `publish.yml` workflow will automatically build, lint, and publish to npm
+Releases are cut via the `Release` workflow in `.github/workflows/release.yml` — a manual `workflow_dispatch` action that handles version bump, tag, GitHub release, and `npm publish` in one shot. See [RELEASING.md](RELEASING.md) for the full flow, channel model (`beta` / `latest`), and required setup (`NPM_TOKEN` secret).
 
 ## Roadmap
 
