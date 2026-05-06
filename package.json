@@ -1,6 +1,6 @@
 {
 	"name": "@moody-church/n8n-nodes-ministry-platform",
-	"version": "0.1.0",
+	"version": "0.2.0",
 	"description": "n8n community node for Ministry Platform — table CRUD, stored procedures, and communications via the MP REST API",
 	"license": "MIT",
 	"homepage": "https://github.com/The-Moody-Church/mp-n8n",
