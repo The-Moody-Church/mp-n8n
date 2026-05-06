@@ -33,13 +33,26 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          # Node 24 ships with npm 11.5+, which is required for Trusted
+          # Publishing on `npm publish`. Node 22 bundles npm 11.4.x where
+          # provenance signing works but OIDC publish auth doesn't —
+          # produces a misleading 404 from the registry on PUT.
+          node-version: '24'
           registry-url: 'https://registry.npmjs.org'
 
-      # Node 22's bundled npm (11.5+) already supports Trusted Publishing.
-      # Avoid `npm install -g npm@latest` here — self-upgrade can fail with
-      # "Cannot find module 'promise-retry'" when the new npm loads from the
-      # old npm's tree mid-install.
+      - name: Verify npm supports Trusted Publishing
+        run: |
+          set -euo pipefail
+          NPM_VERSION=$(npm --version)
+          echo "npm version: $NPM_VERSION"
+          # Trusted Publishing on `npm publish` requires npm 11.5.0+.
+          MAJOR=${NPM_VERSION%%.*}
+          REST=${NPM_VERSION#*.}
+          MINOR=${REST%%.*}
+          if [ "$MAJOR" -lt 11 ] || { [ "$MAJOR" -eq 11 ] && [ "$MINOR" -lt 5 ]; }; then
+            echo "::error::npm $NPM_VERSION is too old. Trusted Publishing requires 11.5.0+. Bump the Node version in setup-node."
+            exit 1
+          fi
 
       - name: Install dependencies
         run: npm ci
