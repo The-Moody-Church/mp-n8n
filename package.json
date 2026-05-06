@@ -43,7 +43,7 @@
 			"dist/credentials/MinistryPlatformApi.credentials.js"
 		],
 		"nodes": [
-			"dist/nodes/MinistryPlatform/MinistryPlatform.node.js"
+			"dist/nodes/MinistryPlatform/MinistryPlatformTmc.node.js"
 		]
 	},
 	"devDependencies": {
