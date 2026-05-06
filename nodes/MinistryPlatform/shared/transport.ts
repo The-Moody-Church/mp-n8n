@@ -19,7 +19,7 @@ import type {
 export async function getServerTimezone(
 	context: IExecuteFunctions | ILoadOptionsFunctions,
 ): Promise<string> {
-	const credentials = await context.getCredentials('ministryPlatformApi');
+	const credentials = await context.getCredentials('ministryPlatformTmcApi');
 	return (credentials.serverTimezone as string) || 'America/Chicago';
 }
 
@@ -247,7 +247,7 @@ export async function mpApiRequest(
 	qs: IDataObject = {},
 	body?: IDataObject | IDataObject[],
 ): Promise<unknown> {
-	const credentials = await this.getCredentials('ministryPlatformApi');
+	const credentials = await this.getCredentials('ministryPlatformTmcApi');
 	const baseUrl = (credentials.baseUrl as string).replace(/\/+$/, '');
 	const url = `${baseUrl}/ministryplatformapi${endpoint}`;
 
@@ -353,7 +353,7 @@ export async function mpApiRequestBinary(
 	endpoint: string,
 	qs: IDataObject = {},
 ): Promise<Buffer> {
-	const credentials = await this.getCredentials('ministryPlatformApi');
+	const credentials = await this.getCredentials('ministryPlatformTmcApi');
 	const baseUrl = (credentials.baseUrl as string).replace(/\/+$/, '');
 	const token = await getAccessToken(this, credentials);
 	const key = tokenCacheKey(credentials);

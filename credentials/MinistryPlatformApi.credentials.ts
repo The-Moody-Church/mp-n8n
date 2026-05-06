@@ -9,9 +9,9 @@ import type {
 } from 'n8n-workflow';
 
 export class MinistryPlatformApi implements ICredentialType {
-	name = 'ministryPlatformApi';
+	name = 'ministryPlatformTmcApi';
 
-	displayName = 'Ministry Platform API';
+	displayName = 'Ministry Platform (Moody) API';
 
 	icon: Icon = 'file:../icons/ministry-platform.svg';
 

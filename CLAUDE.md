@@ -27,7 +27,7 @@ This is an **n8n community node** — a TypeScript npm package that n8n discover
 credentials/
   MinistryPlatformApi.credentials.ts   # OAuth2 client credentials config
 nodes/MinistryPlatform/
-  MinistryPlatform.node.ts             # Main node — execute logic
+  MinistryPlatformTmc.node.ts          # Main node — execute logic
   resources/
     table/                             # Table CRUD operations
       index.ts                         # Operation picker + table selector

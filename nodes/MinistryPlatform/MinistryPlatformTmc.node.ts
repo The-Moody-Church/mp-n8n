@@ -245,10 +245,10 @@ function qualifyQueryClauses(qs: IDataObject, tableName: string): void {
 	}
 }
 
-export class MinistryPlatform implements INodeType {
+export class MinistryPlatformTmc implements INodeType {
 	description: INodeTypeDescription = {
-		displayName: 'Ministry Platform',
-		name: 'ministryPlatform',
+		displayName: 'Ministry Platform (Moody)',
+		name: 'ministryPlatformTmc',
 		icon: 'file:../../icons/ministry-platform.svg',
 		group: ['input'],
 		version: 1,
@@ -263,7 +263,7 @@ export class MinistryPlatform implements INodeType {
 		outputs: [NodeConnectionTypes.Main],
 		credentials: [
 			{
-				name: 'ministryPlatformApi',
+				name: 'ministryPlatformTmcApi',
 				required: true,
 			},
 		],

@@ -1,6 +1,11 @@
 # Project Status
 
-## Current State (2026-04-30)
+## Current State (2026-05-06)
+- v0.2.0 renames internal node `name` to `ministryPlatformTmc` and credential `name` to `ministryPlatformTmcApi` so the package can be installed alongside the official `n8n-nodes-ministryplatform` (ACST) for side-by-side comparison
+- displayName updated to "Ministry Platform (Moody)" / "Ministry Platform (Moody) API" so users distinguish the two packages in the editor and Credentials list
+- Note: credentials are NOT shared between packages — each MP package has its own credential type. Configure both with the same Client ID / Secret values to use both side-by-side.
+
+## Earlier (2026-04-30)
 - v0.1.1-beta.1 base + fixes for URL encoding, error visibility, and SQL ambiguity (deployed dist/ to TMC1 n8n instance pending new release tag)
 - Manual URL builder with `encodeURIComponent` keys+values (matches Swagger encoding) — replaces axios's default which left `$`, `,`, and `.` unencoded and broke some FK-join shapes
 - MP error response body now surfaces in n8n error messages (e.g. `MP GET /tables/X failed (HTTP 500): Ambiguous column name 'Y'`)
