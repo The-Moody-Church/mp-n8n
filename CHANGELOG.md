@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.2.0 — Unreleased
+## 0.2.1 — Unreleased
 
 ### Fixed
 
@@ -14,11 +14,11 @@
 - **Guard for grouped multi-page queries**: with `$groupby`, `$having`, aggregate functions in `$select`, or `$distinct` + `$select`, the PK tiebreaker can't legally be applied — if such a query spans multiple pages without a user-supplied `$orderby`, Get Many now stops with a clear error instead of returning nondeterministically-ordered pages.
 - **Unit test suite** (vitest): `npm test`. Tests now gate the Release workflow alongside lint and build.
 
-### Changed
+## 0.2.0 — 2026-05-06
 
-- Internal node name is `ministryPlatformTmc` and credential name is `ministryPlatformTmcApi` (displayName "Ministry Platform (Moody)"), so this package can be installed alongside ACST's official `n8n-nodes-ministryplatform`. (Merged after 0.1.0 was cut; first released here.)
+- Internal node name renamed to `ministryPlatformTmc` and credential name to `ministryPlatformTmcApi` (displayName "Ministry Platform (Moody)"), so this package can be installed alongside ACST's official `n8n-nodes-ministryplatform`.
 
-## 0.1.0 — 2026-05
+## 0.1.0 — 2026-05-06
 
 - Initial release: Table Get Many / Get / Create / Update / Delete (single + bulk), Stored Procedure List / Execute, Communication Send (email/SMS), File Get (binary + thumbnail).
 - Dropdown-driven UI: table/procedure pickers, GUI filter/column/sort builders, dynamic field mapping.

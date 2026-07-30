@@ -35,7 +35,7 @@
 - All operations shown regardless of per-table permissions (403 error explains what to fix)
 
 ## Next Steps
-- Cut 0.2.0 beta via the Release workflow (`gh workflow run release.yml -f channel=beta` — auto-suggests `0.2.0-beta.0` from the pre-bumped package.json), soak on TMC1 n8n, then promote to `latest` (`0.2.0`). Uses npm Trusted Publishing — see `RELEASING.md`.
+- Note: npm already has `0.2.0` (the May-6 rename-only release, current `latest`), so the pagination/proc fixes ship as **0.2.1** — beta `0.2.1-beta.1` first, then promote to `latest` after soaking on TMC1. Uses npm Trusted Publishing — see `RELEASING.md`.
 - Live-MP smoke of the two fixes: a >1000-row Get Many (e.g. Contacts) and a multi-result-set proc via Execute.
 - Implement Custom API Call operation
 - Continue testing all operations against live MP
