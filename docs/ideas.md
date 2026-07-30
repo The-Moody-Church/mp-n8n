@@ -24,7 +24,7 @@ Currently the OAuth2 client credentials token is fetched on every API request. C
 
 ### Pagination support
 Implement automatic pagination for large result sets on Get Many operations.
-**Status: Implemented** — Always auto-paginates in 1000-record batches. $top respected as max records limit.
+**Status: Implemented** — Always auto-paginates in 1000-record batches. $top respected as max records limit. Since 0.2.0, a primary-key sort tiebreaker is appended to every multi-page fetch so pages come from one deterministic order (SQL Server guarantees none without it).
 
 ### File download as binary
 The File > Get operation should return binary data that can be passed to downstream nodes (e.g., save to disk, attach to email).
