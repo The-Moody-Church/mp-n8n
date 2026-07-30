@@ -105,6 +105,10 @@ Create credentials in n8n with:
 4. Set operation to **Get Many**
 5. Optionally add query options (`$filter`, `$select`, etc.)
 
+**Pagination is automatic** — Get Many fetches all matching records in 1000-row batches (`$top`, when set, acts as the maximum number of records to return). To keep pages consistent, the node appends the table's primary key to `$orderby` as a sort tiebreaker on every page request: SQL Server gives no ordering guarantee without an `ORDER BY`, so unsorted multi-page fetches can silently duplicate or drop rows. The same tiebreaker is applied when you page manually with `$skip` — an offset window's contents are equally undefined without a total order. The primary key is discovered from a `$top=1` probe, skipped if your sort already includes it, and qualified with the table name so FK-join queries stay unambiguous.
+
+> **Grouped queries**: with `$groupby`, `$having`, aggregate functions, or `$distinct` combined with `$select`, the primary-key tiebreaker can't legally be applied. If such a query returns more than 1000 rows, supply an explicit `$orderby` on the grouped/selected columns — otherwise the node stops with an error rather than return nondeterministically-ordered pages.
+
 ### Get a Single Record by ID
 
 1. Select **Table** as the resource, operation **Get**
@@ -134,10 +138,16 @@ Create credentials in n8n with:
 
 1. Select **Stored Procedure** as the resource, operation **Execute**
 2. Choose a procedure from the dropdown
-3. Provide parameters as a JSON object:
+3. Provide parameters as a JSON object (the `@` prefix MP requires is added automatically if you omit it):
    ```json
    { "@ContactID": 12345 }
    ```
+4. Pick a **Result Set Handling** mode. The API always returns an *array of result sets* (`[[...rows], [...rows]]`), even for procs that select a single result set:
+   - **First Result Set** (default) — one item per row of the first result set
+   - **All Result Sets (Flattened)** — one item per row across all result sets, each annotated with `_resultSetIndex`
+   - **All Result Sets (Grouped)** — one item per result set: `{ resultSetIndex, rows }`
+
+> **When to prefer stored procedures**: MP's `/tables` layer adds heavy per-row overhead — we've measured a 60-row `/tables` query taking 5–41 s that runs in ~0.2 s as a stored procedure. For hot paths, write a proc named `api_Custom_*`, register it in `dp_API_Procedures`, and grant it to your API client's role in the MP admin GUI (no role — including Administrators — gets blanket proc access).
 
 ### List Available Stored Procedures
 
@@ -165,17 +175,18 @@ npm run build          # Compile TypeScript
 npm run build:watch    # Watch mode for development
 npm run lint           # Run ESLint
 npm run lint:fix       # Auto-fix lint issues
+npm test               # Run unit tests (vitest)
 ```
 
 ## Publishing
 
-Releases are cut via the `Release` workflow in `.github/workflows/release.yml` — a manual `workflow_dispatch` action that handles version bump, tag, GitHub release, and `npm publish` in one shot. See [RELEASING.md](RELEASING.md) for the full flow, channel model (`beta` / `latest`), and required setup (`NPM_TOKEN` secret).
+Releases are cut via the `Release` workflow in `.github/workflows/release.yml` — a manual `workflow_dispatch` action that handles version bump, tag, GitHub release, and `npm publish` in one shot. See [RELEASING.md](RELEASING.md) for the full flow, channel model (`beta` / `latest`), and required setup (npm Trusted Publishing).
 
 ## Roadmap
 
-- [ ] Dynamic field mapping UI (populate fields based on table schema)
-- [ ] Automatic pagination for large result sets
-- [ ] Token caching (currently fetches a new OAuth2 token per request)
+- [x] Dynamic field mapping UI (populate fields based on table schema)
+- [x] Automatic pagination for large result sets (with a deterministic primary-key sort tiebreaker)
+- [x] Token caching (proactive cache with 5-minute refresh buffer)
 - [ ] MP type generation from your instance's schema
 
 ## Contributing

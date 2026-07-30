@@ -17,6 +17,9 @@ import { getTables } from './listSearch/getTables';
 import { getProcedures } from './listSearch/getProcedures';
 import { getTableFields } from './listSearch/getTableFields';
 import { mpApiRequest, mpApiRequestBinary } from './shared/transport';
+import { appendPkTiebreaker, planPaginationOrder } from './shared/pagination';
+import { prefixProcParams, shapeProcResults } from './shared/procedureResults';
+import type { ResultSetHandling } from './shared/procedureResults';
 
 /**
  * Validates that a path segment is safe for URL interpolation.
@@ -81,6 +84,41 @@ function toRecordArray(response: unknown): IDataObject[] {
 		return [response as IDataObject];
 	}
 	return [{ value: response } as IDataObject];
+}
+
+/**
+ * Coerce a query option value to a string for clause inspection — n8n
+ * expressions can resolve non-string values into string-typed options
+ * (e.g. an $orderby of 1).
+ */
+function toOptionalString(value: unknown): string | undefined {
+	if (value == null || value === '') {
+		return undefined;
+	}
+	return typeof value === 'string' ? value : String(value);
+}
+
+/**
+ * Discover a table's primary key by fetching a single default-select record:
+ * MP returns columns in schema order and the first column is the PK. Returns
+ * null (never throws) for empty tables or API errors — pagination proceeds
+ * without a sort tiebreaker in that case.
+ */
+async function probeTablePrimaryKey(
+	context: IExecuteFunctions,
+	tableName: string,
+): Promise<string | null> {
+	try {
+		const response = await mpApiRequest.call(context, 'GET', `/tables/${tableName}`, {
+			$top: 1,
+		});
+		if (Array.isArray(response) && response.length > 0) {
+			return Object.keys(response[0] as IDataObject)[0] ?? null;
+		}
+		return null;
+	} catch {
+		return null;
+	}
 }
 
 /**
@@ -345,6 +383,10 @@ export class MinistryPlatformTmc implements INodeType {
 		const resource = this.getNodeParameter('resource', 0) as string;
 		const operation = this.getNodeParameter('operation', 0) as string;
 
+		// Primary keys probed for pagination sort tiebreakers, cached per
+		// execution (null = empty table or failed probe; not re-probed per item).
+		const pkCache = new Map<string, string | null>();
+
 		for (let i = 0; i < items.length; i++) {
 			try {
 				if (resource === 'table') {
@@ -427,11 +469,6 @@ export class MinistryPlatformTmc implements INodeType {
 								: sorts;
 						}
 
-						// Pre-qualify bare column references against the selected table so
-						// queries with FK joins don't trigger SQL Server "Ambiguous column"
-						// errors when MP wraps the query for pagination/aggregation.
-						qualifyQueryClauses(qs, tableName);
-
 						// Auto-paginate in 1000-record batches.
 						// If $top is set, respect it as the max records to return.
 						const PAGE_SIZE = 1000;
@@ -440,8 +477,53 @@ export class MinistryPlatformTmc implements INodeType {
 						delete qs['$top'];
 						delete qs['$skip'];
 
+						// $skip/$top paging has no ordering guarantee without a
+						// deterministic ORDER BY — SQL Server may order each page's scan
+						// differently, silently duplicating rows on one page and dropping
+						// them from another. Append the table's primary key as a sort
+						// tiebreaker whenever the fetch can span multiple pages or uses a
+						// $skip offset window (whose contents are equally undefined
+						// without a total order).
+						const plan = planPaginationOrder({
+							orderby: toOptionalString(qs['$orderby']),
+							groupby: toOptionalString(qs['$groupby']),
+							having: toOptionalString(qs['$having']),
+							select: toOptionalString(qs['$select']),
+							distinct: qs['$distinct'] === true || qs['$distinct'] === 'true',
+							maxRecords,
+							skip,
+							pageSize: PAGE_SIZE,
+						});
+						if (plan.kind === 'unsafe-order' && !plan.hasUserOrderBy && skip > 0) {
+							throw new NodeOperationError(
+								this.getNode(),
+								`Query on "${tableName}" uses $skip together with $groupby, $having, aggregates, or $distinct but has no $orderby. ` +
+									'An offset window is not deterministic without an explicit sort — add $orderby on the grouped/selected columns in Query Options.',
+								{ itemIndex: i },
+							);
+						}
+						if (plan.kind === 'tiebreaker') {
+							if (!pkCache.has(tableName)) {
+								pkCache.set(tableName, await probeTablePrimaryKey(this, tableName));
+							}
+							const primaryKey = pkCache.get(tableName);
+							if (primaryKey) {
+								qs['$orderby'] = appendPkTiebreaker(
+									toOptionalString(qs['$orderby']),
+									primaryKey,
+									tableName,
+								);
+							}
+						}
+
+						// Pre-qualify bare column references against the selected table so
+						// queries with FK joins don't trigger SQL Server "Ambiguous column"
+						// errors when MP wraps the query for pagination/aggregation.
+						qualifyQueryClauses(qs, tableName);
+
 						let fetched = 0;
 						let hasMore = true;
+						let pageIndex = 0;
 
 						while (hasMore) {
 							const batchSize =
@@ -460,6 +542,24 @@ export class MinistryPlatformTmc implements INodeType {
 							);
 							const records = toRecordArray(response);
 
+							// Grouped/distinct queries can't take the PK tiebreaker, so a
+							// result that actually spans pages is nondeterministic without
+							// an explicit sort — fail instead of returning corrupt data.
+							if (
+								pageIndex > 0 &&
+								records.length > 0 &&
+								plan.kind === 'unsafe-order' &&
+								!plan.hasUserOrderBy
+							) {
+								throw new NodeOperationError(
+									this.getNode(),
+									`Query on "${tableName}" uses $groupby, $having, aggregates, or $distinct and returned more than ${PAGE_SIZE} rows. ` +
+										'Pagination is not deterministic without an explicit sort — add $orderby on the grouped/selected columns ' +
+										`in Query Options, or set $top to ${PAGE_SIZE} or less.`,
+									{ itemIndex: i },
+								);
+							}
+
 							for (const record of records) {
 								returnData.push({ json: record, pairedItem: i });
 							}
@@ -467,6 +567,7 @@ export class MinistryPlatformTmc implements INodeType {
 							fetched += records.length;
 							skip += records.length;
 							hasMore = records.length === batchSize;
+							pageIndex++;
 						}
 					} else if (operation === 'get') {
 						const recordId = validatePathSegment(
@@ -807,8 +908,32 @@ export class MinistryPlatformTmc implements INodeType {
 							i,
 							this,
 						);
-						const paramsJson = this.getNodeParameter('parameters', i, '{}') as string;
-						const body = safeJsonParse<IDataObject>(paramsJson, 'Parameters (JSON)', i, this);
+						// A json-type parameter is normally a string, but an expression can
+						// resolve to an object directly — accept both.
+						const rawParams = this.getNodeParameter('parameters', i, '{}');
+						const parsedParams =
+							typeof rawParams === 'string'
+								? safeJsonParse<IDataObject>(rawParams, 'Parameters (JSON)', i, this)
+								: (rawParams as IDataObject);
+						if (
+							parsedParams === null ||
+							typeof parsedParams !== 'object' ||
+							Array.isArray(parsedParams)
+						) {
+							throw new NodeOperationError(
+								this.getNode(),
+								'Parameters (JSON) must be a JSON object of parameter names and values',
+								{ itemIndex: i },
+							);
+						}
+						// MP requires @-prefixed parameter names; add the prefix when omitted.
+						const body = prefixProcParams(parsedParams);
+
+						const resultSetHandling = this.getNodeParameter(
+							'resultSetHandling',
+							i,
+							'firstResultSet',
+						) as ResultSetHandling;
 
 						const response = await mpApiRequest.call(
 							this,
@@ -818,7 +943,7 @@ export class MinistryPlatformTmc implements INodeType {
 							body,
 						);
 
-						for (const record of toRecordArray(response)) {
+						for (const record of shapeProcResults(response, resultSetHandling)) {
 							returnData.push({ json: record, pairedItem: i });
 						}
 					}
