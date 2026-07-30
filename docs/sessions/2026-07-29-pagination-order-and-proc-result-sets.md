@@ -23,6 +23,10 @@ Two silent-data-corruption bugs:
 - A same-named column under a different prefix (`Household_ID_Table.Contact_ID`) is *not* the PK — the tiebreaker must still be appended.
 - Release flow: package.json pre-bumped to 0.2.0; blank-version beta dispatch auto-suggests `0.2.0-beta.0`, latest-channel then promotes to `0.2.0`. Don't run `npm run release` locally (pushes tags outside the workflow).
 
+## Post-review hardening
+
+An adversarial multi-agent review of the branch (3 lenses, every finding independently refuted twice) produced 10 raw findings; 2 survived — both the same defect: **a user-set `$skip` with `$top` ≤ 1000 classified as `single-page` and bypassed the tiebreaker**, leaving manual offset windows (a standard n8n paging pattern) exactly as nondeterministic as the bug this branch fixes. Fixed by passing `skip` into `planPaginationOrder` (single-page now requires `skip <= 0`), plus an upfront error for grouped `$skip` windows without `$orderby`. Also hardened from refuted-but-useful findings: query option values are now coerced via `toOptionalString` before clause inspection (an expression resolving `$orderby` to a number would have hit `.trim()` TypeError), the 0.1.0 changelog date was corrected to 2026-05, and two pre-existing gaps were logged in ideas.md (POST-get fallback drops `$userId`/`$globalFilterId`; continueOnFail emits partial pages).
+
 ## Verified working
 
 - 53/53 unit tests, `npm run lint` clean (strict mode), `npm run build` clean, no test output in `dist/`.

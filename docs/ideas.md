@@ -38,3 +38,9 @@ Add a Postman collection for testing the MP API directly, independent of n8n.
 
 ### multiOptions column picker refresh
 The Columns to Return (multiOptions) field requires closing and reopening the node after selecting a table to populate. This is an n8n framework limitation with `loadOptionsDependsOn` on `multiOptions` type fields.
+
+### POST /tables/{table}/get fallback drops $userId / $globalFilterId
+The long-URL fallback in `shared/transport.ts` maps only Select/Filter/OrderBy/GroupBy/Having/Top/Skip/Distinct/Search into the POST body — `$userId` and `$globalFilterId` are silently dropped when a query crosses the ~4096-char threshold. Map them in the POST body (or refuse the fallback when they're set). Pre-existing gap, surfaced by the 2026-07-29 review.
+
+### continueOnFail emits partial pages before a mid-pagination error
+Get Many pushes each page into the output as it arrives, so any failure on page N (network error, unsafe-order guard) under "On Error: Continue" leaves pages 1..N-1 in the output alongside the error item. Buffering rows per item before emitting would make error output all-or-nothing. Pre-existing pattern, surfaced by the 2026-07-29 review.

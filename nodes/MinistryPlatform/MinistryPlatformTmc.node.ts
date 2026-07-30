@@ -87,6 +87,18 @@ function toRecordArray(response: unknown): IDataObject[] {
 }
 
 /**
+ * Coerce a query option value to a string for clause inspection — n8n
+ * expressions can resolve non-string values into string-typed options
+ * (e.g. an $orderby of 1).
+ */
+function toOptionalString(value: unknown): string | undefined {
+	if (value == null || value === '') {
+		return undefined;
+	}
+	return typeof value === 'string' ? value : String(value);
+}
+
+/**
  * Discover a table's primary key by fetching a single default-select record:
  * MP returns columns in schema order and the first column is the PK. Returns
  * null (never throws) for empty tables or API errors — pagination proceeds
@@ -469,16 +481,27 @@ export class MinistryPlatformTmc implements INodeType {
 						// deterministic ORDER BY — SQL Server may order each page's scan
 						// differently, silently duplicating rows on one page and dropping
 						// them from another. Append the table's primary key as a sort
-						// tiebreaker whenever the fetch can span multiple pages.
+						// tiebreaker whenever the fetch can span multiple pages or uses a
+						// $skip offset window (whose contents are equally undefined
+						// without a total order).
 						const plan = planPaginationOrder({
-							orderby: qs['$orderby'] as string | undefined,
-							groupby: qs['$groupby'] as string | undefined,
-							having: qs['$having'] as string | undefined,
-							select: qs['$select'] as string | undefined,
+							orderby: toOptionalString(qs['$orderby']),
+							groupby: toOptionalString(qs['$groupby']),
+							having: toOptionalString(qs['$having']),
+							select: toOptionalString(qs['$select']),
 							distinct: qs['$distinct'] === true || qs['$distinct'] === 'true',
 							maxRecords,
+							skip,
 							pageSize: PAGE_SIZE,
 						});
+						if (plan.kind === 'unsafe-order' && !plan.hasUserOrderBy && skip > 0) {
+							throw new NodeOperationError(
+								this.getNode(),
+								`Query on "${tableName}" uses $skip together with $groupby, $having, aggregates, or $distinct but has no $orderby. ` +
+									'An offset window is not deterministic without an explicit sort — add $orderby on the grouped/selected columns in Query Options.',
+								{ itemIndex: i },
+							);
+						}
 						if (plan.kind === 'tiebreaker') {
 							if (!pkCache.has(tableName)) {
 								pkCache.set(tableName, await probeTablePrimaryKey(this, tableName));
@@ -486,7 +509,7 @@ export class MinistryPlatformTmc implements INodeType {
 							const primaryKey = pkCache.get(tableName);
 							if (primaryKey) {
 								qs['$orderby'] = appendPkTiebreaker(
-									qs['$orderby'] as string | undefined,
+									toOptionalString(qs['$orderby']),
 									primaryKey,
 									tableName,
 								);

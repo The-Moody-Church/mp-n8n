@@ -31,6 +31,8 @@ export interface PaginationOrderInput {
 	distinct?: boolean;
 	/** User-requested max records ($top); 0 or less means unlimited. */
 	maxRecords: number;
+	/** User-requested starting offset ($skip); 0 or less means none. */
+	skip: number;
 	/** Auto-pagination batch size. */
 	pageSize: number;
 }
@@ -38,8 +40,10 @@ export interface PaginationOrderInput {
 /**
  * Decide how the auto-pagination loop must handle result ordering.
  *
- * - 'single-page': the fetch cannot span pages ($top fits in one batch), so no
- *   ordering guarantee is needed.
+ * - 'single-page': the fetch cannot depend on ordering ($top fits in one batch
+ *   AND no rows are skipped), so no ordering guarantee is needed. A user-set
+ *   $skip disqualifies this: an OFFSET window's contents are undefined without
+ *   a total order, even for a single request.
  * - 'tiebreaker': append the table's primary key to $orderby to guarantee a
  *   deterministic total order across pages.
  * - 'unsafe-order': the query is grouped ($groupby/$having/aggregates) or
@@ -49,7 +53,7 @@ export interface PaginationOrderInput {
  *   caller must fail rather than return nondeterministically-ordered pages.
  */
 export function planPaginationOrder(input: PaginationOrderInput): PaginationOrderPlan {
-	if (input.maxRecords > 0 && input.maxRecords <= input.pageSize) {
+	if (input.maxRecords > 0 && input.maxRecords <= input.pageSize && input.skip <= 0) {
 		return { kind: 'single-page' };
 	}
 

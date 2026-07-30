@@ -9,7 +9,7 @@ import {
 	planPaginationOrder,
 } from '../nodes/MinistryPlatform/shared/pagination';
 
-const base = { maxRecords: 0, pageSize: 1000 };
+const base = { maxRecords: 0, skip: 0, pageSize: 1000 };
 
 describe('planPaginationOrder', () => {
 	it('plans a tiebreaker when no $top is set (unlimited fetch)', () => {
@@ -29,6 +29,26 @@ describe('planPaginationOrder', () => {
 
 	it('plans a tiebreaker when $top exceeds the page size', () => {
 		expect(planPaginationOrder({ ...base, maxRecords: 1001 })).toEqual({ kind: 'tiebreaker' });
+	});
+
+	it('plans a tiebreaker for a $skip offset window even when $top fits one page', () => {
+		expect(planPaginationOrder({ ...base, maxRecords: 1000, skip: 1000 })).toEqual({
+			kind: 'tiebreaker',
+		});
+		expect(planPaginationOrder({ ...base, maxRecords: 500, skip: 500 })).toEqual({
+			kind: 'tiebreaker',
+		});
+	});
+
+	it('classifies a grouped $skip offset window as unsafe-order', () => {
+		expect(
+			planPaginationOrder({
+				...base,
+				maxRecords: 1000,
+				skip: 1000,
+				groupby: 'Congregation_ID',
+			}),
+		).toEqual({ kind: 'unsafe-order', reason: 'groupby', hasUserOrderBy: false });
 	});
 
 	it('single-page takes precedence over grouping (no probe, no error needed)', () => {

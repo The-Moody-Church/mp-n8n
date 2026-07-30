@@ -4,7 +4,7 @@
 
 ### Fixed
 
-- **Deterministic pagination on Get Many.** Multi-page fetches previously paged with `$top`/`$skip` and no enforced `$orderby`. SQL Server gives no ordering guarantee without an `ORDER BY`, and MP evaluates each page request independently — so results over 1000 rows could silently duplicate rows on one page and drop them from another (the count looked right; the data was wrong). Get Many now appends the table's primary key to `$orderby` as a sort tiebreaker on every page request. The PK is discovered from a `$top=1` default-select probe (first column in schema order), cached per execution, skipped when it already appears in the sort, and qualified with the table name so FK-join queries stay unambiguous.
+- **Deterministic pagination on Get Many.** Multi-page fetches previously paged with `$top`/`$skip` and no enforced `$orderby`. SQL Server gives no ordering guarantee without an `ORDER BY`, and MP evaluates each page request independently — so results over 1000 rows could silently duplicate rows on one page and drop them from another (the count looked right; the data was wrong). Get Many now appends the table's primary key to `$orderby` as a sort tiebreaker on every page request, including manual `$skip` offset windows (whose contents are equally undefined without a total order, even when `$top` fits in a single batch). The PK is discovered from a `$top=1` default-select probe (first column in schema order), cached per execution, skipped when it already appears in the sort, and qualified with the table name so FK-join queries stay unambiguous.
 - **Stored procedure results now emit rows, not result sets.** `/procs/{name}` always returns an array of result sets (`[[...rows], [...rows]]`), even for single-result-set procs. Execute previously passed that envelope straight through, so every emitted item's `json` was an entire result-set array instead of a row object.
 
 ### Added
@@ -18,7 +18,7 @@
 
 - Internal node name is `ministryPlatformTmc` and credential name is `ministryPlatformTmcApi` (displayName "Ministry Platform (Moody)"), so this package can be installed alongside ACST's official `n8n-nodes-ministryplatform`. (Merged after 0.1.0 was cut; first released here.)
 
-## 0.1.0 — 2026-04
+## 0.1.0 — 2026-05
 
 - Initial release: Table Get Many / Get / Create / Update / Delete (single + bulk), Stored Procedure List / Execute, Communication Send (email/SMS), File Get (binary + thumbnail).
 - Dropdown-driven UI: table/procedure pickers, GUI filter/column/sort builders, dynamic field mapping.
