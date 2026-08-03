@@ -27,6 +27,15 @@ Two silent-data-corruption bugs:
 
 An adversarial multi-agent review of the branch (3 lenses, every finding independently refuted twice) produced 10 raw findings; 2 survived — both the same defect: **a user-set `$skip` with `$top` ≤ 1000 classified as `single-page` and bypassed the tiebreaker**, leaving manual offset windows (a standard n8n paging pattern) exactly as nondeterministic as the bug this branch fixes. Fixed by passing `skip` into `planPaginationOrder` (single-page now requires `skip <= 0`), plus an upfront error for grouped `$skip` windows without `$orderby`. Also hardened from refuted-but-useful findings: query option values are now coerced via `toOptionalString` before clause inspection (an expression resolving `$orderby` to a number would have hit `.trim()` TypeError), the 0.1.0 changelog date was corrected to 2026-05, and two pre-existing gaps were logged in ideas.md (POST-get fallback drops `$userId`/`$globalFilterId`; continueOnFail emits partial pages).
 
+## Production rollout (2026-07-29 evening → 2026-08-03)
+
+Released as **0.2.1-beta.1** (npm already had a forgotten rename-only `0.2.0` as `latest` — check `gh release list` + `npm view ... dist-tags` before trusting package.json history), promoted to stable **0.2.1** on 2026-08-03. Along the way, retiring the old pre-rename package from TMC1 turned into a production migration:
+
+- Uninstalling the old package via the n8n UI first hit EACCES (old `docker cp` deploys left laptop-UID-owned dirs; fixed with `chown -R node:node`), then succeeded — which orphaned **5 active workflows / 17 nodes** still on the old `ministryPlatform` node type (CPP, Mandated Reporter ×2, MP Geocode ×2). The uninstall dialog only shows workflows for the package you clicked — query the DB before uninstalling any community package.
+- Migration: SQL swap of `type` + `credentials` per node in **both** `workflow_entity.nodes` and the `workflow_history` row for `workflow_entity."versionId"` — n8n's publish reads the history draft row, not the entity column — then `publish_workflow` per workflow (zero downtime).
+- Gotcha: any `npm install/remove` in `/home/node/.n8n/nodes` reifies the tree and reverts hand-copied `dist/` files to the registry artifact. Fixed by installing the real npm `0.2.1-beta.1` (later `0.2.1`) and syncing `installed_packages."installedVersion"`.
+- The orphaned "Ministry Platform (PowerAutomate)" credential (old `ministryPlatformApi` type) remains in the UI for manual deletion.
+
 ## Verified working
 
 - 53/53 unit tests, `npm run lint` clean (strict mode), `npm run build` clean, no test output in `dist/`.

@@ -34,8 +34,11 @@
 - Columns to Return (multiOptions) requires close/reopen after selecting table to populate
 - All operations shown regardless of per-table permissions (403 error explains what to fix)
 
+## Released (2026-08-03)
+- **0.2.1 is stable** (npm dist-tag `latest`; promoted from `0.2.1-beta.1` after a 5-day soak). TMC1's n8n runs the npm-managed 0.2.1.
+- The old pre-rename `n8n-nodes-ministry-platform` package is fully retired from TMC1: all 5 dependent production workflows (17 nodes) were migrated to `ministryPlatformTmc` + the "Ministry Platform (Moody) account" credential via DB migration of the `workflow_history` draft rows + republish. See the 2026-07-29 session doc.
+
 ## Next Steps
-- Note: npm already has `0.2.0` (the May-6 rename-only release, current `latest`), so the pagination/proc fixes ship as **0.2.1** — beta `0.2.1-beta.1` first, then promote to `latest` after soaking on TMC1. Uses npm Trusted Publishing — see `RELEASING.md`.
 - Live-MP smoke of the two fixes: a >1000-row Get Many (e.g. Contacts) and a multi-result-set proc via Execute.
 - Implement Custom API Call operation
 - Continue testing all operations against live MP
