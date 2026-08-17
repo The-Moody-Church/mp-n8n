@@ -6,51 +6,11 @@ n8n community node for Ministry Platform. Connects to the MP REST API to provide
 
 > **NEVER delete, update, or create MP records without explicit user confirmation.** Ministry Platform is a shared production database with real church member data. See `.claude/rules/security.md`.
 
-## Commands
-
-```bash
-npm run build          # Compile TypeScript → dist/
-npm run build:watch    # Watch mode
-npm run dev            # Launch n8n with this node loaded for local testing
-npm run lint           # ESLint check
-npm run lint:fix       # ESLint auto-fix
-npm run release        # Bump version and publish
-```
-
 ## Architecture
 
 ### n8n Node Structure
 
-This is an **n8n community node** — a TypeScript npm package that n8n discovers at runtime. The key pattern is **resource + operation**: the user picks a resource (Table, Stored Procedure, Communication, File) and an operation (Get Many, Get, Create, Update, Execute, Send), then fills in operation-specific fields.
-
-```
-credentials/
-  MinistryPlatformApi.credentials.ts   # OAuth2 client credentials config
-nodes/MinistryPlatform/
-  MinistryPlatformTmc.node.ts          # Main node — execute logic
-  resources/
-    table/                             # Table CRUD operations
-      index.ts                         # Operation picker + table selector
-      getAll.ts, get.ts, create.ts, update.ts
-    procedure/                         # Stored procedure operations
-      index.ts, execute.ts
-    communication/                     # Email/SMS operations
-      index.ts, send.ts
-    file/                              # File attachment operations
-      index.ts, get.ts
-  shared/
-    transport.ts                       # Proactive token cache + authenticated requests
-    descriptions.ts                    # Shared field definitions (table/proc selectors, query options)
-  listSearch/
-    getTables.ts                       # Dynamic dropdown — fetches table list from /tables
-    getProcedures.ts                   # Dynamic dropdown — fetches proc list from /procs
-    getTableFields.ts                  # Dynamic dropdown — fetches field names from a table
-icons/
-  ministry-platform.svg
-postman/
-  MinistryPlatform-API.postman_collection.json   # Postman collection for direct API testing
-  README.md
-```
+This is an **n8n community node** — a TypeScript npm package that n8n discovers at runtime. The key pattern is **resource + operation**: the user picks a resource (Table, Stored Procedure, Communication, File) and an operation (Get Many, Get, Create, Update, Execute, Send), then fills in operation-specific fields. Layout: `credentials/`, `nodes/MinistryPlatform/` (resources, `shared/transport.ts` + `descriptions.ts`, `listSearch/` dynamic dropdowns), `postman/` (collection for direct API testing).
 
 ### Ministry Platform API
 
