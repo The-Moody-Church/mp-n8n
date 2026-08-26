@@ -41,7 +41,9 @@ Postman collection for testing the Ministry Platform REST API directly, independ
 ### Files
 | Request | Method | Endpoint | Notes |
 |---------|--------|----------|-------|
-| Get | GET | `/files/{uniqueFileId}` | Binary, optional $thumbnail |
+| Get File | GET | `/files/{uniqueFileId}` | Binary, optional $thumbnail |
+| List Files for Record | GET | `/files/{table}/{recordId}` | Metadata array, optional $default |
+| Upload File | POST | `/files/{table}/{recordId}` | Multipart parts file-0, file-1, …; $description, $default, $longestDimension, $userId |
 
 ## Filter Syntax
 

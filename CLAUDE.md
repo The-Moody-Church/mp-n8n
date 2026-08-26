@@ -28,6 +28,8 @@ The credential stores the platform URL (e.g. `https://churchname.ministryplatfor
 | `/procs/{proc}` | POST | Execute stored procedure |
 | `/communications` | POST | Send email/SMS |
 | `/files/{id}` | GET | Retrieve file attachment (supports `$thumbnail`) |
+| `/files/{table}/{recordId}` | GET | List file attachment metadata for a record (supports `$default`) |
+| `/files/{table}/{recordId}` | POST | Upload files (multipart parts `file-0`, `file-1`, …; `$description`, `$default`, `$longestDimension`, `$userId`) |
 
 Auth is OAuth2 client credentials: POST to `{baseUrl}/oauth/connect/token` with `grant_type=client_credentials`.
 
@@ -51,7 +53,9 @@ The URL length limit is the most commonly hit. In mp-charts, queries with ~240 p
 
 **POST-based GET for long queries** — `POST /tables/{table}/get` accepts query parameters in the request body instead of the URL. The transport layer automatically switches to this when a GET URL would exceed ~4096 characters. Parameters map as: `$select` → `Select`, `$filter` → `Filter`, etc.
 
-**$User for audit trail** — On POST, PUT, and DELETE, the `$User` query parameter controls which MP user appears in the audit log. If omitted, the API client's default user is recorded. Exposed as the "Audit User ID" field on create/update/delete operations.
+**$User for audit trail** — On POST, PUT, and DELETE, the `$User` query parameter controls which MP user appears in the audit log. If omitted, the API client's default user is recorded. Exposed as the "Audit User ID" field on create/update/delete operations. Note: the `/files` endpoints use `$userId` for the same purpose (per the live tenant swagger) — and the `$userId` inside table Query Options is a third, unrelated thing (Global Filter evaluation on reads).
+
+**Live tenant swagger** — `{platformUrl}/ministryplatformapi/swagger/docs/v1` is the authoritative API contract for the instance; it documents the `/files/{table}/{recordId}` endpoints that both `docs/MinistryPlatform.swagger.json` (ACST) and the PowerAutomate connector spec omit.
 
 **Bulk delete** — Single delete uses `DELETE /tables/{table}/{id}`. Multiple IDs use `POST /tables/{table}/delete` with `{ "Ids": [1, 2, 3], "User": 96 }`. The node detects comma-separated IDs and uses the appropriate method automatically.
 

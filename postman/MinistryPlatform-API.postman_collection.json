@@ -311,7 +311,7 @@
 		},
 		{
 			"name": "Files",
-			"description": "Retrieve file attachments.",
+			"description": "Retrieve and upload file attachments.",
 			"item": [
 				{
 					"name": "Get File",
@@ -326,6 +326,45 @@
 							]
 						},
 						"description": "Download a file attachment by its Unique File ID (GUID). Returns binary data. Enable $thumbnail for a smaller preview."
+					}
+				},
+				{
+					"name": "List Files for Record",
+					"request": {
+						"method": "GET",
+						"url": {
+							"raw": "{{baseUrl}}/files/Contacts/12345",
+							"host": ["{{baseUrl}}"],
+							"path": ["files", "Contacts", "12345"],
+							"query": [
+								{ "key": "$default", "value": "true", "disabled": true, "description": "Return only the default file (e.g. default image)" }
+							]
+						},
+						"description": "List file attachment metadata (FileDescription array) for a record: FileId, FileName, FileSize, IsDefaultImage, UniqueFileId, etc. Metadata only — download content via Get File with the UniqueFileId."
+					}
+				},
+				{
+					"name": "Upload File",
+					"request": {
+						"method": "POST",
+						"body": {
+							"mode": "formdata",
+							"formdata": [
+								{ "key": "file-0", "type": "file", "src": [] }
+							]
+						},
+						"url": {
+							"raw": "{{baseUrl}}/files/Contacts/12345",
+							"host": ["{{baseUrl}}"],
+							"path": ["files", "Contacts", "12345"],
+							"query": [
+								{ "key": "$description", "value": "", "disabled": true, "description": "Description stored with the file(s); applies to every part" },
+								{ "key": "$default", "value": "true", "disabled": true, "description": "Set the uploaded file as the record's default image" },
+								{ "key": "$longestDimension", "value": "300", "disabled": true, "description": "Resize uploaded images so the longest side is this many pixels" },
+								{ "key": "$userId", "value": "", "disabled": true, "description": "MP User ID for the audit log (files use $userId, not $User)" }
+							]
+						},
+						"description": "Upload one or more files to a record as multipart/form-data. Parts must be named file-0, file-1, ... (add more file rows for multi-file). Do not set Content-Type manually — Postman owns the multipart boundary. Returns a FileDescription array. Request bodies over ~20 MB are rejected."
 					}
 				}
 			]
