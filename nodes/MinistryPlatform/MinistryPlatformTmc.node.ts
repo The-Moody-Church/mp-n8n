@@ -16,10 +16,15 @@ import { fileDescription } from './resources/file';
 import { getTables } from './listSearch/getTables';
 import { getProcedures } from './listSearch/getProcedures';
 import { getTableFields } from './listSearch/getTableFields';
-import { mpApiRequest, mpApiRequestBinary } from './shared/transport';
+import { mpApiRequest, mpApiRequestBinary, mpApiRequestMultipart } from './shared/transport';
+import { encodeMultipart } from './shared/multipart';
 import { appendPkTiebreaker, planPaginationOrder } from './shared/pagination';
 import { prefixProcParams, shapeProcResults } from './shared/procedureResults';
+import type { MultipartPart } from './shared/multipart';
 import type { ResultSetHandling } from './shared/procedureResults';
+
+/** MP's API rejects request bodies over ~20 MB; check before sending. */
+const MAX_UPLOAD_BYTES = 20 * 1024 * 1024;
 
 /**
  * Validates that a path segment is safe for URL interpolation.
@@ -53,6 +58,31 @@ function resolveLocator(locator: IDataObject | string): string {
 		return String(locator.value ?? '');
 	}
 	return '';
+}
+
+/**
+ * Read and validate the table + record ID pair shared by the record-scoped
+ * file operations (Get Many, Upload). Returns URL-safe raw segments — callers
+ * still encodeURIComponent them at interpolation.
+ */
+function getFileRecordTarget(
+	node: IExecuteFunctions,
+	itemIndex: number,
+): { tableName: string; recordId: string } {
+	const tableLocator = node.getNodeParameter('tableName', itemIndex) as IDataObject | string;
+	const tableName = validatePathSegment(
+		resolveLocator(tableLocator),
+		'Table name',
+		itemIndex,
+		node,
+	);
+	const recordId = String(node.getNodeParameter('recordId', itemIndex)).trim();
+	if (!/^\d+$/.test(recordId) || Number(recordId) < 1) {
+		throw new NodeOperationError(node.getNode(), 'Record ID must be a positive integer', {
+			itemIndex,
+		});
+	}
+	return { tableName, recordId };
 }
 
 /**
@@ -885,6 +915,121 @@ export class MinistryPlatformTmc implements INodeType {
 							binary: { data: binary },
 							pairedItem: i,
 						});
+					} else if (operation === 'getAll') {
+						const { tableName, recordId } = getFileRecordTarget(this, i);
+						// Expressions can resolve booleans as the string 'true'/'false'.
+						const defaultOnly = this.getNodeParameter('defaultOnly', i, false);
+
+						const qs: IDataObject = {};
+						if (defaultOnly === true || defaultOnly === 'true') {
+							qs['$default'] = true;
+						}
+
+						const response = await mpApiRequest.call(
+							this,
+							'GET',
+							`/files/${encodeURIComponent(tableName)}/${encodeURIComponent(recordId)}`,
+							qs,
+						);
+
+						for (const record of toRecordArray(response)) {
+							returnData.push({ json: record, pairedItem: i });
+						}
+					} else if (operation === 'upload') {
+						const { tableName, recordId } = getFileRecordTarget(this, i);
+
+						const binaryFieldsRaw = String(this.getNodeParameter('binaryPropertyName', i));
+						const binaryFields = [
+							...new Set(
+								binaryFieldsRaw
+									.split(',')
+									.map((s) => s.trim())
+									.filter((s) => s),
+							),
+						];
+						if (binaryFields.length === 0) {
+							throw new NodeOperationError(
+								this.getNode(),
+								'At least one input binary field name is required',
+								{ itemIndex: i },
+							);
+						}
+
+						// MP expects the parts of one upload request to be named file-0, file-1, ...
+						const parts: MultipartPart[] = [];
+						for (const [index, fieldName] of binaryFields.entries()) {
+							const binaryData = this.helpers.assertBinaryData(i, fieldName);
+							const buffer = await this.helpers.getBinaryDataBuffer(i, fieldName);
+							parts.push({
+								name: `file-${index}`,
+								// ASP.NET only treats parts carrying a filename attribute as files.
+								filename: binaryData.fileName || `file-${index}`,
+								contentType: binaryData.mimeType || 'application/octet-stream',
+								data: buffer,
+							});
+						}
+
+						// Check size before encoding: Buffer.concat would hold a second full
+						// copy of an oversized payload just to throw afterwards.
+						const totalBytes = parts.reduce((sum, part) => sum + part.data.length, 0);
+						if (totalBytes > MAX_UPLOAD_BYTES) {
+							throw new NodeOperationError(
+								this.getNode(),
+								`Upload is ~${Math.round(totalBytes / (1024 * 1024))} MB, which exceeds the MP API's ~20 MB request limit. Split the files across multiple upload operations.`,
+								{ itemIndex: i },
+							);
+						}
+
+						// Expression values can arrive as the "wrong" primitive (string "96"
+						// for a number field, etc.) — coerce instead of silently dropping.
+						const additionalFields = this.getNodeParameter(
+							'additionalFields',
+							i,
+							{},
+						) as IDataObject;
+						const qs: IDataObject = {};
+						if (additionalFields.description != null && additionalFields.description !== '') {
+							qs['$description'] = String(additionalFields.description);
+						}
+						// No-op values are omitted rather than sent: buildQueryString would
+						// drop a boolean false or numeric 0 anyway, and MP's behavior for an
+						// explicit $default=false is unverified.
+						if (
+							additionalFields.setAsDefaultImage === true ||
+							additionalFields.setAsDefaultImage === 'true'
+						) {
+							qs['$default'] = true;
+						}
+						const longestDimension = Number(additionalFields.longestDimension);
+						if (Number.isFinite(longestDimension) && longestDimension > 0) {
+							qs['$longestDimension'] = Math.floor(longestDimension);
+						}
+						// The /files endpoints take $userId for audit attribution — unlike
+						// /tables writes ($User) and the table read Query Options $userId
+						// (Global Filter evaluation), which are different things.
+						const auditUserId = Number(additionalFields.auditUserId);
+						if (Number.isInteger(auditUserId) && auditUserId > 0) {
+							qs['$userId'] = auditUserId;
+						}
+
+						const { body, contentType } = encodeMultipart(parts);
+						const response = await mpApiRequestMultipart.call(
+							this,
+							`/files/${encodeURIComponent(tableName)}/${encodeURIComponent(recordId)}`,
+							qs,
+							body,
+							contentType,
+						);
+
+						// One item per returned FileDescription; keep the item visible even
+						// if a tenant variation returns an empty success body.
+						const records = toRecordArray(response);
+						if (records.length === 0) {
+							returnData.push({ json: { success: true }, pairedItem: i });
+						}
+						for (const record of records) {
+							returnData.push({ json: record, pairedItem: i });
+						}
 					}
 				} else if (resource === 'procedure') {
 					if (operation === 'list') {

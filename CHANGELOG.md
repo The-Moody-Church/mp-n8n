@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.3.0 — 2026-08-26
+
+### Fixed
+
+- **File → Get was broken: it always threw `ERR_INVALID_ARG_TYPE`.** `mpApiRequestBinary` requested `returnFullResponse: true`, so n8n's `httpRequest` resolved to a `{ body, headers, statusCode, statusMessage }` envelope while the transport cast it to `Buffer` and the node then called `Buffer.from(<envelope object>)`, which throws. Nothing consumed the envelope's headers or status, so the option is simply removed and the helper now resolves to the actual file Buffer. No test could have caught it — the `httpRequest` helper is typed `Promise<any>`, which let the cast compile silently.
+- **Expired-token retry now sees MP's 500/IDX10223 error body.** `isTokenExpiredError` looked for the response body at `error.cause.response.data`, but `helpers.httpRequest` rethrows the raw AxiosError with the body at `error.response.data` — so the IDX10223 detection never fired and only the 401 path triggered a retry. The check now reads both shapes and decodes Buffer bodies (from binary requests) before matching.
+
+### Added
+
+- **File → Upload** (`POST /files/{table}/{recordId}`): attach one or more files to any MP record, replacing raw HTTP Request nodes for MP uploads. Table picker reuses the dynamic table dropdown; comma-separated **Input Binary Field** names upload multiple files in one request as multipart parts `file-0`, `file-1`, …; **Additional Fields** cover `$description` (applies to every file in the request), `$default` (set as default image), `$longestDimension` (server-side image resize), and Audit User ID → `$userId` (note: the `/files` endpoints use `$userId` for audit attribution, unlike `$User` on `/tables` writes). Emits one item per returned FileDescription, surfacing `FileId` and `UniqueFileId`. All four query params verified against live MP, including multi-file behavior and the 200×160→64px resize.
+- **File → Get Many** (`GET /files/{table}/{recordId}`): list file attachment metadata for a record, with a **Default Only** toggle (`$default=true`). Returns metadata only — pair with File → Get and the returned `UniqueFileId` to download content.
+- **Hand-rolled multipart encoder** (`shared/multipart.ts`): the community-nodes import allowlist bans the `form-data` package, so the multipart body is encoded into a Buffer directly (boundary from `node:crypto`, WHATWG-style escaping of workflow-controlled filenames as a header-injection guard, per-part Content-Type validation). A Buffer body also replays safely on the expired-token retry, unlike the streams n8n's HTTP Request node re-uses under filesystem/S3 binary mode. Uploads are size-checked against MP's ~20 MB request limit before sending.
+- **Transport tests**: `tests/multipart.test.ts` pins the encoder's framing byte-for-byte; `tests/transport.test.ts` pins `buildQueryString`'s skip semantics and the widened `isTokenExpiredError` (both now exported for tests).
+
 ## 0.2.1 — 2026-08-03
 
 ### Fixed

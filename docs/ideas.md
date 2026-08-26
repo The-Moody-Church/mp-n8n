@@ -14,7 +14,11 @@ Add guided UI for building $filter, $select, and $orderby without writing raw SQ
 Port the MPNext `generate-mp-types` pattern so users can generate TypeScript types from their MP instance's schema.
 
 ### Custom API Call
-Add a catch-all operation that lets users make arbitrary API requests with custom method, endpoint, query params, and body. Useful for edge cases or new API features.
+Add a catch-all operation that lets users make arbitrary API requests with custom method, endpoint, query params, and body. Useful for edge cases or new API features. (Less pressing since 0.3.0 — file upload, the main workload that forced raw HTTP Request nodes, is now native.)
+
+### File upload
+Native File → Upload so workflows stop using raw HTTP Request nodes against `/files` (free-text `nodeCredentialType` broke silently on the 0.2.0 credential rename).
+**Status: Implemented** — 0.3.0 adds Upload (multipart `POST /files/{table}/{recordId}`, multi-file, $description/$default/$longestDimension/$userId) and Get Many (metadata listing). PUT/DELETE `/files/{fileId}` deliberately deferred: zero production callers, and PUT's multipart field is `file` (singular), not `file-0`.
 
 ## Improvements
 

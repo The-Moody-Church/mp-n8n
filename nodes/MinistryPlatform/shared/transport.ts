@@ -83,8 +83,9 @@ async function getAccessToken(
 /**
  * Check if an error indicates an expired token.
  * MP returns 401 for some auth failures but 500 with .NET IDX10223 for expired tokens.
+ * Exported for unit tests.
  */
-function isTokenExpiredError(error: unknown): boolean {
+export function isTokenExpiredError(error: unknown): boolean {
 	const err = error as Record<string, unknown>;
 	const httpCode = String(err?.httpCode ?? '');
 	const message = String(err?.message ?? '');
@@ -100,12 +101,20 @@ function isTokenExpiredError(error: unknown): boolean {
 		String((err?.cause as Record<string, unknown>)?.message ?? ''),
 	];
 
-	// AxiosError shape: cause.response.data may contain the MP error body
+	// helpers.httpRequest rethrows the raw AxiosError, whose body sits at
+	// response.data; wrapped errors nest it under cause.response.data. A binary
+	// request's error body arrives as a Buffer, which JSON.stringify would
+	// render unreadable — decode it first.
+	const directResponse = err?.response as Record<string, unknown> | undefined;
 	const cause = err?.cause as Record<string, unknown> | undefined;
-	const response = cause?.response as Record<string, unknown> | undefined;
-	const data = response?.data;
-	if (data) {
-		texts.push(typeof data === 'string' ? data : JSON.stringify(data));
+	const causeResponse = cause?.response as Record<string, unknown> | undefined;
+	for (const data of [directResponse?.data, causeResponse?.data]) {
+		if (!data) continue;
+		if (Buffer.isBuffer(data)) {
+			texts.push(data.toString('utf8'));
+		} else {
+			texts.push(typeof data === 'string' ? data : JSON.stringify(data));
+		}
 	}
 
 	return texts.some((t) => t.includes('IDX10223'));
@@ -131,12 +140,18 @@ function extractMpErrorDetail(error: unknown): string | undefined {
 	const directResponse = err?.response as Record<string, unknown> | undefined;
 	const cause = err?.cause as Record<string, unknown> | undefined;
 	const causeResponse = cause?.response as Record<string, unknown> | undefined;
-	const data =
+	let data =
 		directResponse?.data ??
 		directResponse?.body ??
 		causeResponse?.data ??
 		causeResponse?.body ??
 		err?.error;
+
+	// Binary requests (encoding: 'arraybuffer') deliver error bodies as Buffers;
+	// decode before formatting or the detail renders as JSON.stringify byte noise.
+	if (Buffer.isBuffer(data)) {
+		data = data.toString('utf8');
+	}
 
 	if (data == null) return undefined;
 	if (typeof data === 'string') return data.slice(0, 2000);
@@ -211,8 +226,11 @@ const MAX_URL_LENGTH = 4096;
  * axios's default builder leaves `$`, `,`, and `.` unencoded, and some MP query
  * shapes (e.g. FK joins like `Foo_ID_Table.Bar`) only parse correctly when the
  * separator commas are percent-encoded as Swagger does.
+ *
+ * Exported for unit tests — file upload relies on the exact skip semantics
+ * (a stringified 'false' survives the boolean-false drop).
  */
-function buildQueryString(qs: IDataObject): string {
+export function buildQueryString(qs: IDataObject): string {
 	const parts: string[] = [];
 	for (const [key, value] of Object.entries(qs)) {
 		if (value === undefined || value === null || value === '' || value === false) continue;
@@ -366,8 +384,9 @@ export async function mpApiRequestBinary(
 		headers: {
 			Authorization: `Bearer ${token}`,
 		},
+		// No returnFullResponse: with it, httpRequest resolves to a
+		// { body, headers, ... } envelope instead of the Buffer callers expect.
 		encoding: 'arraybuffer',
-		returnFullResponse: true,
 		json: false,
 	};
 
@@ -389,5 +408,85 @@ export async function mpApiRequestBinary(
 			}
 		}
 		throw enrichRequestError(error, 'GET', endpoint);
+	}
+}
+
+/**
+ * Axios only JSON-parses responses it can parse; an empty or non-JSON body
+ * arrives as a string. Normalize so callers always see parsed data.
+ */
+function normalizeJsonResponse(response: unknown): unknown {
+	if (typeof response !== 'string') return response;
+	if (response === '') return [];
+	try {
+		return JSON.parse(response);
+	} catch {
+		return response;
+	}
+}
+
+/**
+ * Make an authenticated multipart/form-data POST (for file uploads).
+ * The body is a pre-encoded Buffer (see shared/multipart.ts): axios sends
+ * Buffers raw, and a Buffer also replays safely on the expired-token retry,
+ * unlike a stream. `json: true` only sets the Accept header in n8n's helper —
+ * the explicit multipart Content-Type governs the body.
+ */
+export async function mpApiRequestMultipart(
+	this: IExecuteFunctions,
+	endpoint: string,
+	qs: IDataObject,
+	body: Buffer,
+	contentType: string,
+): Promise<unknown> {
+	const credentials = await this.getCredentials('ministryPlatformTmcApi');
+	const baseUrl = (credentials.baseUrl as string).replace(/\/+$/, '');
+	const token = await getAccessToken(this, credentials);
+	const key = tokenCacheKey(credentials);
+
+	const queryString = buildQueryString(qs);
+	const url = `${baseUrl}/ministryplatformapi${endpoint}`;
+	const finalUrl = queryString ? `${url}?${queryString}` : url;
+
+	// POST has no body-based fallback for long URLs (that only exists for
+	// GET /tables); a very long $description can still hit the IIS limit.
+	const estimatedLength = estimateUrlLength(url, qs);
+	if (estimatedLength > MAX_URL_LENGTH) {
+		throw new Error(
+			`Request URL is ~${estimatedLength} characters, which exceeds the IIS limit of ~${MAX_URL_LENGTH}. ` +
+				'Try shortening the file description.',
+		);
+	}
+
+	const options: IHttpRequestOptions = {
+		method: 'POST',
+		url: finalUrl,
+		headers: {
+			Accept: 'application/json',
+			Authorization: `Bearer ${token}`,
+			'Content-Type': contentType,
+		},
+		body,
+		json: true,
+	};
+
+	try {
+		return normalizeJsonResponse(await this.helpers.httpRequest(options));
+	} catch (error) {
+		if (isTokenExpiredError(error) && !retriedAuth.get(key)) {
+			retriedAuth.set(key, true);
+			tokenCache.delete(key);
+			try {
+				const freshToken = await getAccessToken(this, credentials);
+				options.headers = { ...options.headers, Authorization: `Bearer ${freshToken}` };
+				const result = await this.helpers.httpRequest(options);
+				retriedAuth.delete(key);
+				return normalizeJsonResponse(result);
+			} catch (retryError) {
+				retriedAuth.delete(key);
+				throw enrichRequestError(retryError, 'POST', endpoint);
+			}
+		}
+		throw enrichRequestError(error, 'POST', endpoint);
 	}
 }
