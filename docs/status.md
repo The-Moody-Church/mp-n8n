@@ -5,7 +5,8 @@
 - **File → Get bug fixed**: `mpApiRequestBinary` set `returnFullResponse: true` and cast the response envelope to Buffer, so every File → Get threw `ERR_INVALID_ARG_TYPE`. Also fixed: `isTokenExpiredError` never saw MP's 500/IDX10223 body (it read `cause.response.data`; AxiosErrors carry it at `response.data`), so the expired-token retry only fired on 401s.
 - **Contract source**: the live tenant swagger (`{baseUrl}/ministryplatformapi/swagger/docs/v1`) documents the `/files` endpoints that both the repo's ACST spec and the PowerAutomate connector spec lack — it settled `$userId` (files audit) vs `$User` (tables write audit) vs Query Options `$userId` (Global Filter on reads).
 - Test suite now 71 tests across `shared/pagination.ts`, `shared/procedureResults.ts`, `shared/multipart.ts`, and `shared/transport.ts` (`buildQueryString` + `isTokenExpiredError` exported for tests).
-- Purpose: workflow ezq1Omm71ACQjxtw ("Mandated Reporter IL Certification Intake") uploads via a raw HTTP Request node with free-text `nodeCredentialType` — the last raw HTTP node pointed at MP, silently broken once by the a70f187 credential rename. Swap to the native node after the 0.3.0 release + TMC1 update.
+- Purpose: workflow ezq1Omm71ACQjxtw ("Mandated Reporter IL Certification Intake") uploaded via a raw HTTP Request node with free-text `nodeCredentialType` — the last raw HTTP node pointed at MP, silently broken once by the a70f187 credential rename.
+- **Deployed 2026-08-26**: 0.3.0 released to npm `latest` via the Release workflow (Trusted Publishing); TMC1 updated through the n8n UI (pin rewrote `^0.2.1` → `0.3.0`, no EACCES this time) + container restart. The raw HTTP upload node in ezq1Omm71ACQjxtw was swapped for native File → Upload via SQL on `workflow_entity.nodes` + the `workflow_history` draft row (same node id/name, so wiring and retryOnFail×3 survive; `$description` expression copied verbatim; the stale `ministryPlatformApi` credential leftover is gone). Runtime-verified in the live n8n with a scratch workflow + scratch contact (both removed after): File → Get downloads a 370 KB PDF under filesystem-v2 binary mode (it threw before 0.3.0), Get Many lists it, and Upload round-tripped the same PDF byte-identical (FileSize 370193) through `getBinaryDataBuffer` → hand-encoded multipart → `helpers.httpRequest` Buffer body — the exact production shape.
 
 ## Earlier (2026-07-29)
 - **Deterministic pagination**: Get Many appends the table's PK to `$orderby` as a sort tiebreaker on multi-page fetches (probed via `$top=1` default-select, cached per execution, skipped when already present, table-qualified via the auto-qualifier). Grouped/aggregate/distinct+select queries can't take the tiebreaker — they now throw a clear error when they span pages without a user `$orderby`, instead of silently returning duplicated/missing rows.
@@ -46,8 +47,7 @@
 - The old pre-rename `n8n-nodes-ministry-platform` package is fully retired from TMC1: all 5 dependent production workflows (17 nodes) were migrated to `ministryPlatformTmc` + the "Ministry Platform (Moody) account" credential via DB migration of the `workflow_history` draft rows + republish. See the 2026-07-29 session doc.
 
 ## Next Steps
-- Release 0.3.0 (`gh workflow run release.yml -f channel=latest -f version=0.3.0`), update TMC1's community node via the n8n UI, restart, then swap the raw HTTP upload node in workflow ezq1Omm71ACQjxtw for File → Upload.
-- Verify File → Get post-fix through n8n (it threw on every use before 0.3.0).
+- Optional: one end-to-end Mandated Reporter form submission to confirm the swapped upload node in situ (creates a real Participant_Certification — clean up after).
 - Live-MP smoke of the 0.2.1 fixes: a >1000-row Get Many (e.g. Contacts) and a multi-result-set proc via Execute.
 - Implement Custom API Call operation
 - Test POST /tables/{table}/get fallback with large filter
