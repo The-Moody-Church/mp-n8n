@@ -49,7 +49,7 @@
 - Token caching via n8n's expirable accessToken field
 
 ## Testing
-- Deployed to TMC1 n8n instance (192.168.5.222)
+- Deployed to the TMC1 n8n instance
 - Credential test working (preAuthentication + GET /tables)
 - Table > Get Many with $filter confirmed working (18 Huff contacts returned)
 - Installation: `npm install` from tgz into `/home/node/.n8n/nodes/`, plus DB registration in `installed_packages` and `installed_nodes` tables
